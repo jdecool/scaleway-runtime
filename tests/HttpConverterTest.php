@@ -267,6 +267,14 @@ final class HttpConverterTest extends TestCase
         self::assertSame('internal.local', $request->getHost());
     }
 
+    public function testEventWithoutHostGetsTheDefaultHostOfRequestCreate(): void
+    {
+        $request = HttpConverter::toRequest(['path' => '/jobs', 'method' => 'POST']);
+
+        self::assertSame('http://localhost/jobs', $request->getUri());
+        self::assertSame(80, $request->getPort());
+    }
+
     public function testFunctionResponseFromTextResponse(): void
     {
         $response = new Response('{"a":"é"}', 201, ['Content-Type' => 'application/json']);

@@ -49,9 +49,8 @@ final class RequestHandlerKernel implements HttpKernelInterface
         try {
             $server = [
                 'REMOTE_ADDR' => $request->getClientIp(),
-                // PSR-7 needs a parsable URI; an Event without Host gets the default of Request::create().
-                'HTTP_HOST' => '' === $request->getHost() ? 'localhost' : $request->getHttpHost(),
-                'SERVER_PORT' => $request->getPort() ?? ($request->isSecure() ? 443 : 80),
+                'HTTP_HOST' => $request->getHttpHost(),
+                'SERVER_PORT' => $request->getPort(),
                 'HTTPS' => $request->isSecure() ? 'on' : 'off',
             ] + $request->server->all();
         } catch (SuspiciousOperationException) {

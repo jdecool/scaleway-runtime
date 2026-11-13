@@ -69,6 +69,9 @@ final class HttpConverter
                 $contentType = strtolower($value);
             }
         }
+        // Events need not carry a Host (CRON ones may not), and without it the Request's URI would be "http://:/";
+        // Request::create() falls back to the same default.
+        $server['HTTP_HOST'] ??= 'localhost';
 
         // PHP only parses form bodies into $_POST for POST; Symfony's createFromGlobals() covers the other body methods.
         $post = $files = [];
