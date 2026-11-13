@@ -12,6 +12,9 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 | `GET /counter` | A per-process invocation counter: it keeps growing while a Warm Process serves the Invocations |
 | `POST /` | Where CRON Invocations land, with the trigger's arguments as JSON body |
 
+`public/hello.php` is a second, function-like Front Controller: a closure taking the `Request` and returning a `Response`, called for every Invocation without any Kernel.
+Select it with the `front_controller` runtime option, for instance `APP_RUNTIME_OPTIONS='{"front_controller":"public/hello.php"}' vendor/bin/scaleway-serve`, then `curl 'http://127.0.0.1:8000/?name=Scaleway'`.
+
 ## Run it locally
 
 ```sh
