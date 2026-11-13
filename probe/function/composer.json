@@ -1,5 +1,10 @@
 {
     "name": "jdecool/scaleway-runtime-probe",
     "description": "Ships vendor/ to find out whether Scaleway runs Composer over it at deploy time",
-    "require": {}
+    "require": {},
+    "scripts": {
+        "record-composer-run": "@php -r \"file_put_contents('composer-run.json', json_encode(['devMode' => getenv('COMPOSER_DEV_MODE'), 'cwd' => getcwd(), 'at' => date(DATE_ATOM)]));\"",
+        "post-install-cmd": "@record-composer-run",
+        "post-update-cmd": "@record-composer-run"
+    }
 }

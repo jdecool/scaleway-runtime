@@ -112,6 +112,8 @@ function facts($event, $context, int $invocations, string $firstInvocationAt): a
             'vendorListing' => @scandir(__DIR__.'/vendor'),
             'vendorMarkerKept' => defined('PROBE_VENDOR_MARKER'),
             'composerLockPresent' => is_file(__DIR__.'/composer.lock'),
+            // Written by the composer.json scripts: tells whether Composer ran its scripts, and with --no-dev or not.
+            'composerRun' => json_decode((string) @file_get_contents(__DIR__.'/composer-run.json'), true),
             'tmpWritable' => is_writable('/tmp'),
             'tmpWriteWorks' => false !== @file_put_contents($tmpProbe, 'x') && @unlink($tmpProbe),
             'tmpFreeBytes' => @disk_free_space('/tmp'),

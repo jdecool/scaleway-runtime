@@ -32,6 +32,9 @@ APP_ENV=prod APP_SECRET=local php /tmp/function/vendor/bin/scaleway-serve
 ## Deploy it
 
 The Terraform code is unvalidated: it was written against the `scaleway/scaleway` provider v2.92 documentation and never applied.
+Scaleway documents that it installs the dependencies of a shipped `composer.json` at deploy time.
+If it does so over the shipped `vendor/`, deploying this example likely fails: its `composer.lock` installs the runtime from `..`, which is not in the zip.
+The [probe](../probe) settles whether and how Composer runs.
 
 ```sh
 cd example

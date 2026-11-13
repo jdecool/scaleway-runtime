@@ -16,7 +16,7 @@ terraform -chdir=probe/terraform apply
 export PROBE_URL=$(terraform -chdir=probe/terraform output -raw endpoint)
 ```
 
-To probe the PHP 8.4 runtime too, run `terraform -chdir=probe/terraform apply -var runtime=php84` afterwards and repeat the checks.
+To probe the PHP 8.4 runtime too, run `terraform -chdir=probe/terraform apply -var runtime=php84` afterwards: it replaces the function, so export `PROBE_URL` again and repeat the checks in a separate results directory.
 
 ## Run the checks
 
@@ -90,7 +90,7 @@ The answers the files settle:
 | Body encoding (base64 or not), size limit | `06-*` |
 | `$_SERVER`, `argv`, `SCRIPT_FILENAME`, superglobals | `01-facts.json` `globals` |
 | Read-only code dir, writable `/tmp`, free space | `01-facts.json` `filesystem` |
-| Shipped `vendor/` kept, Composer run at deploy | `01-facts.json` `vendorMarkerKept`, `composerLockPresent`, `vendorListing` |
+| Shipped `vendor/` kept, Composer run at deploy (scripts, `--no-dev`) | `01-facts.json` `vendorMarkerKept`, `composerLockPresent`, `composerRun`, `vendorListing` |
 | stdout, uncaught exceptions | `07-*.txt`, logs |
 
 ## Clean up
