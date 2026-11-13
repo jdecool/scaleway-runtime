@@ -1,0 +1,51 @@
+{
+    "name": "jdecool/scaleway-runtime",
+    "description": "Symfony Runtime to run PHP applications on Scaleway Serverless Functions",
+    "type": "library",
+    "license": "MIT",
+    "keywords": ["symfony", "runtime", "scaleway", "serverless"],
+    "authors": [
+        {
+            "name": "Jeremy Decool"
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "symfony/http-foundation": "^7.4 || ^8.0",
+        "symfony/http-kernel": "^7.4 || ^8.0",
+        "symfony/runtime": "^7.4 || ^8.0"
+    },
+    "require-dev": {
+        "friendsofphp/php-cs-fixer": "^3.95",
+        "phpstan/phpstan": "^2.3",
+        "phpstan/phpstan-phpunit": "^2.1",
+        "phpunit/phpunit": "^13.4"
+    },
+    "autoload": {
+        "psr-4": {
+            "JDecool\\ScalewayRuntime\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "JDecool\\ScalewayRuntime\\Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "symfony/runtime": false
+        },
+        "sort-packages": true
+    },
+    "scripts": {
+        "test": "phpunit",
+        "phpstan": "phpstan analyse",
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "check": [
+            "@cs",
+            "@phpstan",
+            "@test"
+        ]
+    }
+}
