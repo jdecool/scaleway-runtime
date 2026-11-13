@@ -16,6 +16,9 @@
         "symfony/http-kernel": "^7.4 || ^8.0",
         "symfony/runtime": "^7.4 || ^8.0"
     },
+    "suggest": {
+        "ext-zip": "To build the deployment zip with vendor/bin/scaleway-package"
+    },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.95",
         "phpstan/phpstan": "^2.3",
@@ -29,7 +32,8 @@
         }
     },
     "bin": [
-        "bin/scaleway-init"
+        "bin/scaleway-init",
+        "bin/scaleway-package"
     ],
     "autoload-dev": {
         "psr-4": {

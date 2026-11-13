@@ -1,0 +1,17 @@
+# Kept out of the Composer dist; Composer also honors this when mirroring the package
+# through a "path" repository, as scaleway-package does for example/.
+/.github export-ignore
+/docs export-ignore
+/example export-ignore
+/probe export-ignore
+/tests export-ignore
+/vendor export-ignore
+/.gitattributes export-ignore
+/.gitignore export-ignore
+/.php-cs-fixer.dist.php export-ignore
+/GLOSSARY.md export-ignore
+/phpstan.neon.dist export-ignore
+/phpunit.xml.dist export-ignore
+/composer.lock export-ignore
+/.phpunit.cache export-ignore
+/.php-cs-fixer.cache export-ignore

@@ -8,3 +8,4 @@ parameters:
         - src
         - tests
         - bin/scaleway-init
+        - bin/scaleway-package

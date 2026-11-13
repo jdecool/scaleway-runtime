@@ -13,7 +13,7 @@ Vocabulary follows [GLOSSARY.md](../GLOSSARY.md); decisions are recorded in [doc
 - HTTP mapping: base64 bodies decoded on input; output marked `isBase64Encoded` when the body is not valid UTF-8; multi-value headers sent as arrays; streamed and binary file responses buffered; query string rebuilt from `queryStringParameters`; `X-Forwarded-*` trusted; platform limits documented.
 - Errors escaping the Application are logged to stderr and returned as a 500 Function Response (generic body, details when `APP_DEBUG=1`).
 - Cache is warmed at build time; cache and log dirs fall back to `/tmp` when the project dir is not writable; logs go to stderr.
-- `vendor/bin/scaleway-package` builds a zip with `vendor/` (`--no-dev -o`) and a warmed prod cache, excluding `var/`, `tests/`, `.env.local` (ADR 0003).
+- `vendor/bin/scaleway-package` builds a zip with `vendor/` (`--no-dev --classmap-authoritative`, from `composer.lock`) and a warmed prod cache, excluding `var/`, `tests/`, `.env.local` (ADR 0003).
 - CRON Invocations become `POST /` HTTP requests by default; a JSON body `{"command": "...", "args": {...}}` makes it a Command Invocation run through the Console Application of the same Kernel; a non-zero exit code yields a 500 with the command output.
 - Tests: PHPUnit on conversions, GitHub Actions CI (PHPUnit, PHPStan max, PHP-CS-Fixer; PHP 8.4/8.5 x Symfony 7.4/8.x), local Emulator `vendor/bin/scaleway-serve`, manual real E2E deployed with Terraform.
 
