@@ -96,9 +96,10 @@ class ScalewayRuntime extends SymfonyRuntime
         };
     }
 
-    protected function resolveType(string $type): mixed
+    protected function getArgument(\ReflectionParameter $parameter, ?string $type): mixed
     {
-        // SymfonyRuntime builds it from PHP globals, which never describe an Invocation.
-        return Request::class === $type ? $this->request : parent::resolveType($type);
+        // SymfonyRuntime builds it from PHP globals, which never describe an Invocation; resolveType()
+        // would be the narrower hook but only exists from symfony/runtime 8.1.
+        return Request::class === $type ? $this->request : parent::getArgument($parameter, $type);
     }
 }
