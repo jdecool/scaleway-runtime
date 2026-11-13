@@ -12,8 +12,12 @@ use Symfony\Component\HttpKernel\TerminableInterface;
 
 final readonly class HttpKernelRunner implements InvocationRunner
 {
+    /**
+     * @param resource $errorLog
+     */
     public function __construct(
         private HttpKernelInterface $kernel,
+        private mixed $errorLog,
     ) {
         // Booting here makes a broken container a boot failure, so the Handler retries with a fresh Application.
         if ($kernel instanceof KernelInterface) {
@@ -31,13 +35,18 @@ final readonly class HttpKernelRunner implements InvocationRunner
         $request = HttpConverter::toRequest($event);
         // The Kernel resets its services itself (services_resetter) when the next main request is handled.
         $response = $this->kernel->handle($request);
+        $functionResponse = HttpConverter::toFunctionResponse($response);
 
-        try {
-            return HttpConverter::toFunctionResponse($response);
-        } finally {
-            if ($this->kernel instanceof TerminableInterface) {
+        if ($this->kernel instanceof TerminableInterface) {
+            try {
                 $this->kernel->terminate($request, $response);
+            } catch (\Throwable $e) {
+                // Behind FPM the client already got the Response when terminate() runs; turning it into
+                // a 500 would invite retries of an operation that succeeded.
+                fwrite($this->errorLog, 'Kernel termination failed: '.$e.\PHP_EOL);
             }
         }
+
+        return $functionResponse;
     }
 }

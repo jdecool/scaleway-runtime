@@ -57,7 +57,7 @@ final class Handler
     {
         try {
             $this->runtime ??= new ScalewayRuntime($this->runtimeOptions());
-            $this->runner ??= $this->runtime->createInvocationRunner();
+            $this->runner ??= $this->runtime->createInvocationRunner($this->errorLog);
 
             return $this->runner->invoke($event, $context);
         } catch (\Throwable $e) {

@@ -39,8 +39,10 @@ class ScalewayRuntime extends SymfonyRuntime
 
     /**
      * Builds the Application from the Front Controller and picks the runner matching its type.
+     *
+     * @param resource $errorLog where failures that must not change the Function Response are reported
      */
-    public function createInvocationRunner(): InvocationRunner
+    public function createInvocationRunner(mixed $errorLog): InvocationRunner
     {
         $projectDir = $this->options['project_dir'] ?? null;
         $frontController = $this->options['front_controller'] ?? 'public/index.php';
@@ -59,7 +61,7 @@ class ScalewayRuntime extends SymfonyRuntime
         $application = $app(...$args);
 
         return match (true) {
-            $application instanceof HttpKernelInterface => new HttpKernelRunner($application),
+            $application instanceof HttpKernelInterface => new HttpKernelRunner($application, $errorLog),
             default => throw new \LogicException(\sprintf('"%s" cannot run Applications of type "%s".', static::class, get_debug_type($application))),
         };
     }

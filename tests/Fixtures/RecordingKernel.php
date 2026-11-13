@@ -48,5 +48,8 @@ final class RecordingKernel implements HttpKernelInterface, TerminableInterface
     public function terminate(Request $request, Response $response): void
     {
         ++$this->terminated;
+        if ('/terminate-fails' === $request->getPathInfo()) {
+            throw new \LogicException('Termination failed on purpose.');
+        }
     }
 }
