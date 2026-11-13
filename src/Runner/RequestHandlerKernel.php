@@ -7,6 +7,7 @@ namespace JDecool\ScalewayRuntime\Runner;
 use Psr\Http\Server\RequestHandlerInterface;
 use Symfony\Bridge\PsrHttpMessage\Factory\HttpFoundationFactory;
 use Symfony\Bridge\PsrHttpMessage\Factory\PsrHttpFactory;
+use Symfony\Component\HttpFoundation\Exception\SuspiciousOperationException;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -45,13 +46,19 @@ final class RequestHandlerKernel implements HttpKernelInterface
 
         // PSR-15 apps read the client from the server params and do not know the trusted proxies, so they get
         // the request as the platform proxy received it, the way mod_remoteip presents it to PHP.
-        $server = [
-            'REMOTE_ADDR' => $request->getClientIp(),
-            // PSR-7 needs a parsable URI; an Event without Host gets the default of Request::create().
-            'HTTP_HOST' => '' === $request->getHost() ? 'localhost' : $request->getHttpHost(),
-            'SERVER_PORT' => $request->getPort() ?? ($request->isSecure() ? 443 : 80),
-            'HTTPS' => $request->isSecure() ? 'on' : 'off',
-        ] + $request->server->all();
+        try {
+            $server = [
+                'REMOTE_ADDR' => $request->getClientIp(),
+                // PSR-7 needs a parsable URI; an Event without Host gets the default of Request::create().
+                'HTTP_HOST' => '' === $request->getHost() ? 'localhost' : $request->getHttpHost(),
+                'SERVER_PORT' => $request->getPort() ?? ($request->isSecure() ? 443 : 80),
+                'HTTPS' => $request->isSecure() ? 'on' : 'off',
+            ] + $request->server->all();
+        } catch (SuspiciousOperationException) {
+            // A malformed (X-Forwarded-)Host is the client's fault and no PSR-7 URI can carry it; FrameworkBundle
+            // answers Kernels the same 400 instead of letting anyone fill the error log.
+            return new Response('Bad Request', Response::HTTP_BAD_REQUEST);
+        }
 
         $response = $this->handler->handle($this->psrFactory->createRequest($request->duplicate(server: $server)));
 

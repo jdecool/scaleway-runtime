@@ -61,6 +61,14 @@ final class RequestHandlerKernelTest extends TestCase
         self::assertSame('https://localhost/', $this->echo(['path' => '/', 'headers' => ['X-Forwarded-Proto' => 'https']])['uri']);
     }
 
+    public function testMalformedHostIsABadRequestThatSkipsTheHandler(): void
+    {
+        $functionResponse = $this->runner->invoke(['path' => '/', 'headers' => ['Host' => 'internal.local', 'X-Forwarded-Host' => 'bad host!']], []);
+
+        self::assertSame(400, $functionResponse['statusCode']);
+        self::assertSame(0, $this->handler->handled);
+    }
+
     public function testBodiesAndUploadsReachTheHandler(): void
     {
         $echo = $this->echo([
