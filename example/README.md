@@ -15,6 +15,9 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 `public/hello.php` is a second, function-like Front Controller: a closure taking the `Request` and returning a `Response`, called for every Invocation without any Kernel.
 Select it with the `front_controller` runtime option, for instance `APP_RUNTIME_OPTIONS='{"front_controller":"public/hello.php"}' vendor/bin/scaleway-serve`, then `curl 'http://127.0.0.1:8000/?name=Scaleway'`.
 
+A Front Controller may also return a PSR-15 `RequestHandlerInterface`, built once and reused like the Kernel, once the application requires `symfony/psr-http-message-bridge` and `nyholm/psr7`.
+Its PSR-7 request sees the client, scheme and host resolved from the platform's `X-Forwarded-*` headers, in `getUri()` as in the `REMOTE_ADDR`, `HTTPS` and `HTTP_HOST` server params.
+
 ## Run it locally
 
 ```sh
