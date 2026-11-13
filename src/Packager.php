@@ -48,6 +48,10 @@ final readonly class Packager
         }
 
         $buildDir = sys_get_temp_dir().'/scaleway-package-'.bin2hex(random_bytes(4));
+        // Private, as it holds the .env files; failing on an existing path keeps a planted directory or symlink out.
+        if (!@mkdir($buildDir, 0o700)) {
+            throw new \RuntimeException(\sprintf('Cannot create "%s".', $buildDir));
+        }
         try {
             $this->log('Copying the application to '.$buildDir);
             $this->copy($buildDir, $this->relativeToApp($zipFile));
@@ -137,7 +141,6 @@ final readonly class Packager
             \RecursiveIteratorIterator::SELF_FIRST,
         );
 
-        $this->mkdir($buildDir);
         foreach ($files as $file) {
             \assert($file instanceof \SplFileInfo);
             $target = $buildDir.'/'.substr($file->getPathname(), \strlen($this->appDir) + 1);
