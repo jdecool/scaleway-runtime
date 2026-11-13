@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 /*
  * The php -S router of the Emulator: the built-in server parses HTTP but wipes all PHP state after each
- * request, so the Handler runs in a separate long-lived worker, and this router forwards Events to it.
+ * request, so the Handler runs in a separate Warm Process, and this router forwards Events to it.
  */
 
 use JDecool\ScalewayRuntime\Emulator;
@@ -28,7 +28,7 @@ $event = Emulator::toEvent(
 );
 
 $response = null;
-$connection = @stream_socket_client('tcp://127.0.0.1:'.getenv('SCALEWAY_EMULATOR_WORKER_PORT'), $errorCode, $errorMessage);
+$connection = @stream_socket_client((string) getenv('SCALEWAY_EMULATOR_SOCKET'), $errorCode, $errorMessage);
 if (false !== $connection) {
     // Scaleway allows Invocations of up to 60 minutes.
     stream_set_timeout($connection, 3600);

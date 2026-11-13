@@ -20,10 +20,16 @@ if (!is_file($handlerFile)) {
     exit(1);
 }
 
-// shortcut: another process may grab the port before the worker binds it; rerun if the worker fails to listen.
-$probe = stream_socket_server('tcp://127.0.0.1:0') ?: exit(1);
-$workerPort = (int) substr((string) strrchr((string) stream_socket_get_name($probe, false), ':'), 1);
-fclose($probe);
+// A Unix socket in a private directory: no port to race for, and other local users cannot send Events.
+$socketDir = sys_get_temp_dir().'/scaleway-serve-'.bin2hex(random_bytes(4));
+if (!mkdir($socketDir, 0o700)) {
+    exit(1);
+}
+$socket = 'unix://'.$socketDir.'/warm-process.sock';
+register_shutdown_function(static function () use ($socketDir): void {
+    @unlink($socketDir.'/warm-process.sock');
+    @rmdir($socketDir);
+});
 
 /**
  * @param list<string>               $command
@@ -42,47 +48,47 @@ function start(array $command, ?array $env = null)
     return $process;
 }
 
-$startWorker = static function () use ($handlerFile, $workerPort) {
-    $worker = start([\PHP_BINARY, __DIR__.'/../resources/emulator/worker.php', $handlerFile, (string) $workerPort]);
-    // Waits until it listens, so the first requests do not find the port closed.
-    for ($i = 0; $i < 100 && proc_get_status($worker)['running']; ++$i) {
-        if (false !== $connection = @stream_socket_client('tcp://127.0.0.1:'.$workerPort)) {
+$startWarmProcess = static function () use ($handlerFile, $socket) {
+    $warmProcess = start([\PHP_BINARY, __DIR__.'/../resources/emulator/warm-process.php', $handlerFile, $socket]);
+    // Waits until it listens, so the first requests do not find the socket closed.
+    for ($i = 0; $i < 100 && proc_get_status($warmProcess)['running']; ++$i) {
+        if (false !== $connection = @stream_socket_client($socket)) {
             fclose($connection);
             break;
         }
         usleep(50_000);
     }
 
-    return $worker;
+    return $warmProcess;
 };
 
-$worker = $startWorker();
+$warmProcess = $startWarmProcess();
 $server = start(
     [\PHP_BINARY, '-d', 'enable_post_data_reading=0', '-d', 'expose_php=0', '-d', 'default_mimetype=', '-S', $address, __DIR__.'/../resources/emulator/router.php'],
-    ['SCALEWAY_EMULATOR_AUTOLOAD' => $autoload, 'SCALEWAY_EMULATOR_WORKER_PORT' => (string) $workerPort] + getenv(),
+    ['SCALEWAY_EMULATOR_AUTOLOAD' => $autoload, 'SCALEWAY_EMULATOR_SOCKET' => $socket] + getenv(),
 );
-// Children outlive a killed parent, so a SIGTERM would leave the port and the worker busy.
+// Children outlive a killed parent, so a SIGTERM would leave the port busy and the Warm Process running.
 if (function_exists('pcntl_async_signals')) {
     pcntl_async_signals(true);
     foreach ([\SIGINT, \SIGTERM] as $signal) {
-        pcntl_signal($signal, static function () use (&$worker, $server): never {
-            proc_terminate($worker);
+        pcntl_signal($signal, static function () use (&$warmProcess, $server): never {
+            proc_terminate($warmProcess);
             proc_terminate($server);
             exit(0);
         });
     }
 }
-fwrite(\STDERR, "Emulator listening on http://{$address}, Warm Process pid ".proc_get_status($worker)['pid'].\PHP_EOL);
+fwrite(\STDERR, "Emulator listening on http://{$address}, Warm Process pid ".proc_get_status($warmProcess)['pid'].\PHP_EOL);
 
 while (($status = proc_get_status($server))['running']) {
     // A dead Warm Process is replaced, as the platform starts a new instance after a crash.
-    if (!proc_get_status($worker)['running']) {
-        $worker = $startWorker();
-        fwrite(\STDERR, 'Emulator: the Warm Process exited, started a new one with pid '.proc_get_status($worker)['pid'].\PHP_EOL);
+    if (!proc_get_status($warmProcess)['running']) {
+        $warmProcess = $startWarmProcess();
+        fwrite(\STDERR, 'Emulator: the Warm Process exited, started a new one with pid '.proc_get_status($warmProcess)['pid'].\PHP_EOL);
         // Keeps an application that cannot even load from flooding the console.
         sleep(1);
     }
     usleep(200_000);
 }
-proc_terminate($worker);
+proc_terminate($warmProcess);
 exit($status['exitcode']);
