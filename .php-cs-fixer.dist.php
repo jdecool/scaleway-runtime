@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 $finder = (new PhpCsFixer\Finder())
     ->in([__DIR__.'/src', __DIR__.'/tests'])
-    ->append([__FILE__]);
+    ->append([__FILE__, __DIR__.'/bin/scaleway-init']);
 
 return (new PhpCsFixer\Config())
     ->setRiskyAllowed(true)

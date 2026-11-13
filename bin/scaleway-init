@@ -1,0 +1,21 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Composer\InstalledVersions;
+
+require $_composer_autoload_path ?? __DIR__.'/../vendor/autoload.php';
+
+$target = realpath(InstalledVersions::getRootPackage()['install_path']).'/handler.php';
+$stub = (string) file_get_contents(__DIR__.'/../resources/handler.php');
+
+if (is_file($target) && file_get_contents($target) !== $stub && !in_array('--force', $argv ?? [], true)) {
+    fwrite(\STDERR, "{$target} exists and differs from the stub; run with --force to overwrite it.".\PHP_EOL);
+    exit(1);
+}
+
+if (false === file_put_contents($target, $stub)) {
+    exit(1);
+}
+echo "Wrote {$target}; set the function handler to \"handler.handle\" and commit the file.", \PHP_EOL;

@@ -28,6 +28,9 @@
             "JDecool\\ScalewayRuntime\\": "src/"
         }
     },
+    "bin": [
+        "bin/scaleway-init"
+    ],
     "autoload-dev": {
         "psr-4": {
             "JDecool\\ScalewayRuntime\\Tests\\": "tests/"
