@@ -16,7 +16,8 @@ Vocabulary follows [GLOSSARY.md](../GLOSSARY.md); decisions are recorded in [doc
 - Errors escaping the Application are logged to stderr and returned as a 500 Function Response (generic body, details when `APP_DEBUG=1`).
 - Cache is warmed at build time; cache and log dirs fall back to `/tmp` when the project dir is not writable; logs go to stderr.
 - `vendor/bin/scaleway-package` builds a zip with `vendor/` (`--no-dev --classmap-authoritative`, from `composer.lock`) and a warmed prod cache, excluding `var/`, `tests/`, `.env.local` (ADR 0003).
-- CRON Invocations become `POST /` HTTP requests by default; a JSON body `{"command": "...", "args": {...}}` makes it a Command Invocation run through the Console Application of the same Kernel; a non-zero exit code yields a 500 with the command output.
+- CRON Invocations become `POST /` HTTP requests by default; a JSON body `{"command": "...", "args": {...}, "secret": "..."}` whose secret matches `SCALEWAY_CRON_SECRET` makes it a Command Invocation run through the Console Application of the same Kernel, non-interactive, `args` mapped to an `ArrayInput`; the exit code 0 yields a 200 and any other a 500, both with the command output (ADR 0005).
+- A Front Controller returning a Console `Application` or a `Command` serves Command Invocations only and answers a 403 to the others; services are reset before and after each command, as no HTTP request follows to trigger the Kernel's own reset.
 - Tests: PHPUnit on conversions, GitHub Actions CI (PHPUnit, PHPStan max, PHP-CS-Fixer; PHP 8.4/8.5 x Symfony 7.4/8.x), local Emulator `vendor/bin/scaleway-serve`, manual real E2E deployed with Terraform.
 
 ## Phases

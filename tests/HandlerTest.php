@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace JDecool\ScalewayRuntime\Tests;
 
+use JDecool\ScalewayRuntime\CommandInvocation;
 use JDecool\ScalewayRuntime\Handler;
 use JDecool\ScalewayRuntime\Tests\Fixtures\RecordingKernel;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\Request;
 
@@ -31,6 +33,7 @@ final class HandlerTest extends TestCase
         self::assertNotFalse($errorLog);
         $this->errorLog = $errorLog;
         RecordingKernel::reset();
+        $_SERVER[CommandInvocation::SECRET_VAR] = 's3cret';
     }
 
     protected function tearDown(): void
@@ -144,6 +147,99 @@ final class HandlerTest extends TestCase
         self::assertSame(3, $this->decode($third)['handled'], 'The request handler must be reused across Invocations.');
     }
 
+    public function testConsoleApplicationRunsCommandInvocationsWithTheirArgs(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/console.php']);
+
+        $response = $handler->invoke($this->commandEvent('app:greet', ['name' => 'Ada', '--tag' => ['a', 'b']]), []);
+
+        self::assertSame(200, $response['statusCode']);
+        self::assertSame('text/plain; charset=UTF-8', $response['headers']['Content-Type'] ?? null);
+        self::assertSame("Hello Ada [a,b]\n", $response['body'], 'Output must be captured undecorated.');
+        self::assertSame('', $this->errorLog());
+    }
+
+    public function testCommandInvocationsAreNotInteractive(): void
+    {
+        $response = $this->handler(['front_controller' => 'front-controllers/console.php'])->invoke($this->commandEvent('app:greet'), []);
+
+        self::assertSame(200, $response['statusCode']);
+        self::assertStringContainsString('Hello nobody', $response['body']);
+    }
+
+    public function testNonZeroExitCodeIsA500WithTheOutputAndIsLogged(): void
+    {
+        $response = $this->handler(['front_controller' => 'front-controllers/console.php'])
+            ->invoke($this->commandEvent('app:greet', ['name' => 'Ada', '--fail' => true]), []);
+
+        self::assertSame(500, $response['statusCode']);
+        self::assertSame("Hello Ada []\n", $response['body']);
+        self::assertStringContainsString('Command "app:greet" failed with exit code 3: Hello Ada []', $this->errorLog());
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function failingCommands(): iterable
+    {
+        yield 'exception' => ['app:throw', 'Thrown on purpose.'];
+        yield 'error' => ['app:error', 'Error on purpose.'];
+        yield 'unknown command' => ['app:missing', 'Command "app:missing" is not defined.'];
+    }
+
+    #[DataProvider('failingCommands')]
+    public function testFailingCommandIsRenderedInA500AndTheProcessKeepsServing(string $command, string $message): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/console.php', 'debug' => false]);
+
+        $response = $handler->invoke($this->commandEvent($command), []);
+
+        self::assertSame(500, $response['statusCode']);
+        self::assertStringContainsString($message, $response['body']);
+        self::assertStringContainsString($message, $this->errorLog());
+        self::assertSame(200, $handler->invoke($this->commandEvent('app:greet', ['name' => 'Ada']), [])['statusCode']);
+    }
+
+    public function testConsoleApplicationForbidsHttpInvocations(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/console.php']);
+
+        self::assertSame(403, $handler->invoke(['path' => '/'], [])['statusCode']);
+        $forged = $handler->invoke(['method' => 'POST', 'path' => '/', 'body' => '{"command":"app:greet","secret":"guess"}'], []);
+        self::assertSame(403, $forged['statusCode']);
+        self::assertStringContainsString('Command Invocation rejected', $this->errorLog());
+    }
+
+    public function testCommandFrontControllerRunsItsCommandWhateverTheName(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/command.php']);
+
+        $first = $handler->invoke($this->commandEvent('anything', ['name' => 'Ada', '--yell' => true]), []);
+        $second = $handler->invoke($this->commandEvent('front-controllers/command.php', ['name' => 'Grace']), []);
+
+        self::assertSame(['statusCode' => 200, 'body' => 'front-controllers/command.php: hello ADA'], array_intersect_key($first, ['statusCode' => 0, 'body' => 0]));
+        self::assertSame('front-controllers/command.php: hello Grace', $second['body']);
+        self::assertSame(403, $handler->invoke(['path' => '/'], [])['statusCode']);
+    }
+
+    public function testCommandBodyWithoutTheSecretReachesTheHttpApplication(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php']);
+
+        $response = $handler->invoke(['method' => 'POST', 'path' => '/', 'body' => '{"command":"cache:clear"}'], []);
+
+        self::assertSame('handled #1 /', $response['body']);
+    }
+
+    public function testCommandInvocationOfAnApplicationWithoutConsoleFails(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php', 'debug' => false]);
+
+        self::assertSame(500, $handler->invoke($this->commandEvent('app:greet'), [])['statusCode']);
+        self::assertStringContainsString('Command Invocations need a Front Controller returning a Kernel, a Console Application or a Command, not "'.RecordingKernel::class.'"', $this->errorLog());
+        self::assertSame('handled #1 /', $handler->invoke(['path' => '/'], [])['body']);
+    }
+
     public function testFrontControllerMustReturnACallable(): void
     {
         $this->handler(['front_controller' => 'front-controllers/not-callable.php', 'debug' => false])->invoke([], []);
@@ -186,6 +282,20 @@ final class HandlerTest extends TestCase
         $_SERVER['APP_RUNTIME_OPTIONS'] = $options + ['error_handler' => false];
 
         return new Handler($composerDir, $this->errorLog);
+    }
+
+    /**
+     * @param array<string, mixed> $args
+     *
+     * @return array<mixed>
+     */
+    private function commandEvent(string $command, array $args = []): array
+    {
+        return [
+            'method' => 'POST',
+            'path' => '/',
+            'body' => json_encode(['command' => $command, 'args' => (object) $args, 'secret' => 's3cret'], \JSON_THROW_ON_ERROR),
+        ];
     }
 
     /**

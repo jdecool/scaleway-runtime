@@ -40,7 +40,11 @@ An Invocation triggered by a Scaleway CRON trigger, carrying the trigger's confi
 _Avoid_: Scheduled job, cron task
 
 **Command Invocation**:
-A CRON Invocation whose body names a console command to run instead of an HTTP route.
+A CRON Invocation whose body names a console command to run instead of an HTTP route, and carries the CRON Secret.
+
+**CRON Secret**:
+The shared secret, known to the function and to its CRON triggers, that proves a CRON Invocation may run a console command.
+_Avoid_: Token, API key
 
 **Emulator**:
 The local server that turns real HTTP requests into Events and calls the Handler, to run an application without deploying it.

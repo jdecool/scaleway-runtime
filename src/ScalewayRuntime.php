@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace JDecool\ScalewayRuntime;
 
+use JDecool\ScalewayRuntime\Runner\ConsoleRunner;
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Runner\InvocationRunner;
 use JDecool\ScalewayRuntime\Runner\RequestHandlerKernel;
 use JDecool\ScalewayRuntime\Runner\ResponseKernel;
 use Psr\Http\Server\RequestHandlerInterface;
+use Symfony\Bundle\FrameworkBundle\Console\Application as FrameworkApplication;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\Command\Command;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
+use Symfony\Component\HttpKernel\KernelInterface;
 use Symfony\Component\Runtime\SymfonyRuntime;
 
 /**
@@ -27,6 +32,9 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  * A Front Controller closure returning a Response is called again for every Invocation, and one
  * taking a Request gets the Invocation's Request (see docs/adr/0004-call-response-front-controllers-per-invocation.md).
  * A PSR-15 request handler is built once and reused like a Kernel; it needs symfony/psr-http-message-bridge and nyholm/psr7.
+ *
+ * Command Invocations run through the Console Application of a Kernel, or of a Front Controller returning a
+ * Console Application or a Command, which then answers any other Invocation with a 403.
  */
 class ScalewayRuntime extends SymfonyRuntime
 {
@@ -85,19 +93,55 @@ class ScalewayRuntime extends SymfonyRuntime
         foreach (new \ReflectionFunction($app(...))->getParameters() as $parameter) {
             $type = $parameter->getType();
             if ($type instanceof \ReflectionNamedType && Request::class === $type->getName()) {
-                return new HttpKernelRunner(new ResponseKernel($respond), $errorLog);
+                return $this->withCommands(new ResponseKernel($respond), $app(...), $errorLog);
             }
         }
 
         [$app, $args] = $resolver->resolve();
         $application = $app(...$args);
 
-        return match (true) {
-            $application instanceof HttpKernelInterface => new HttpKernelRunner($application, $errorLog),
-            $application instanceof Response => new HttpKernelRunner(new ResponseKernel($respond, $application), $errorLog),
-            $application instanceof RequestHandlerInterface => new HttpKernelRunner(new RequestHandlerKernel($application), $errorLog),
+        if ($application instanceof Command) {
+            $command = $application;
+            $application = new Application();
+            // SymfonyRuntime names a nameless command after argv[0], the script path: the Front Controller here.
+            if (!$command->getName()) {
+                $command->setName($frontController);
+            }
+            $application->addCommand($command);
+            $application->setDefaultCommand((string) $command->getName(), true);
+        }
+        if ($application instanceof Application) {
+            return new ConsoleRunner(static fn (): Application => $application, null, $errorLog);
+        }
+
+        $kernel = match (true) {
+            $application instanceof HttpKernelInterface => $application,
+            $application instanceof Response => new ResponseKernel($respond, $application),
+            $application instanceof RequestHandlerInterface => new RequestHandlerKernel($application),
             default => throw new \LogicException(\sprintf('"%s" cannot run Applications of type "%s".', static::class, get_debug_type($application))),
         };
+
+        return $this->withCommands($kernel, $application, $errorLog);
+    }
+
+    /**
+     * Serves an HTTP Application, which also runs Command Invocations when it is a Kernel.
+     *
+     * @param resource $errorLog
+     */
+    private function withCommands(HttpKernelInterface $kernel, object $application, mixed $errorLog): ConsoleRunner
+    {
+        return new ConsoleRunner(static function () use ($kernel, $application): Application {
+            if (!$kernel instanceof KernelInterface) {
+                throw new \LogicException(\sprintf('Command Invocations need a Front Controller returning a Kernel, a Console Application or a Command, not "%s".', get_debug_type($application)));
+            }
+            // Checked in this order since FrameworkBundle's Application extends the Console one, which may be missing.
+            if (!class_exists(Application::class) || !class_exists(FrameworkApplication::class)) {
+                throw new \LogicException('Running Command Invocations through a Kernel requires symfony/console and symfony/framework-bundle.');
+            }
+
+            return new FrameworkApplication($kernel);
+        }, new HttpKernelRunner($kernel, $errorLog), $errorLog);
     }
 
     protected function getArgument(\ReflectionParameter $parameter, ?string $type): mixed

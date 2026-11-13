@@ -157,6 +157,35 @@ final class IntegrationTest extends TestCase
         self::assertSame($first['pid'], $second['pid']);
     }
 
+    public function testCommandInvocationsRunThroughTheKernelAndShareNoStateWithHttpInvocations(): void
+    {
+        $command = static fn (array $args, string $secret = 'cron-secret'): array => [
+            'path' => '/',
+            'method' => 'POST',
+            'body' => json_encode(['command' => 'app:count', 'args' => $args, 'secret' => $secret], \JSON_THROW_ON_ERROR),
+        ];
+        [$http, $first, $second, $httpAfter, $third, $forged] = $this->invoke([
+            ['path' => '/state'],
+            $command(['--times' => '2']),
+            $command([]),
+            ['path' => '/state'],
+            $command([]),
+            $command([], 'guess'),
+        ]);
+
+        self::assertSame(1, $this->json($http)['count']);
+        self::assertSame(200, $first['statusCode']);
+        self::assertIsString($first['body']);
+        self::assertStringStartsWith('count=2 kernelInstances=1 ', $first['body'], 'The command must start from reset services.');
+        self::assertIsString($second['body']);
+        self::assertStringStartsWith('count=1 kernelInstances=1 ', $second['body'], 'The Console Application must reset services after a command.');
+        self::assertSame(1, $this->json($httpAfter)['count'], 'A command must leave no state to the next HTTP Invocation.');
+        self::assertSame(1, $this->json($httpAfter)['kernelInstances']);
+        self::assertIsString($third['body']);
+        self::assertStringStartsWith('count=1 ', $third['body'], 'An HTTP Invocation must leave no state to the next command.');
+        self::assertSame(404, $forged['statusCode'], 'A body with a wrong secret is a plain HTTP POST.');
+    }
+
     /**
      * @param list<array<string, mixed>> $events
      * @param array<string, mixed>       $options runtime options on top of "project_dir"
@@ -176,6 +205,7 @@ final class IntegrationTest extends TestCase
                 'APP_DEBUG' => '0',
                 'APP_RUNTIME_OPTIONS' => json_encode(['project_dir' => $this->projectDir] + $options, \JSON_THROW_ON_ERROR),
                 'TMPDIR' => $this->dir.'/tmp',
+                'SCALEWAY_CRON_SECRET' => 'cron-secret',
                 'PATH' => getenv('PATH') ?: '',
             ],
         );

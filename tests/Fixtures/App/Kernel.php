@@ -68,7 +68,10 @@ final class Kernel extends BaseKernel
         $container->services()
             ->set(Counter::class)
             ->public()
-            ->tag('kernel.reset', ['method' => 'reset']);
+            ->tag('kernel.reset', ['method' => 'reset'])
+            ->set(CountCommand::class)
+            ->autowire()
+            ->autoconfigure();
     }
 
     private function configureRoutes(RoutingConfigurator $routes): void
