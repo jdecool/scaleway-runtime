@@ -32,7 +32,8 @@ final class HttpConverter
     {
         $method = strtoupper(self::string($event['method'] ?? $event['httpMethod'] ?? null) ?? 'GET');
         $path = '/'.ltrim(self::string($event['path'] ?? null) ?? '', '/');
-        $queryString = http_build_query(self::stringMap($event['queryStringParameters'] ?? null));
+        // An explicit separator, as arg_separator.output may be "&amp;".
+        $queryString = http_build_query(self::stringMap($event['queryStringParameters'] ?? null), '', '&');
         parse_str($queryString, $query);
 
         $body = self::string($event['body'] ?? null) ?? '';
@@ -82,6 +83,7 @@ final class HttpConverter
     public static function toFunctionResponse(Response $response): array
     {
         $body = '';
+        $level = ob_get_level();
         // A callback handler keeps the chunks even when a streamed callback calls ob_flush().
         ob_start(static function (string $chunk) use (&$body): string {
             $body .= $chunk;
@@ -91,7 +93,11 @@ final class HttpConverter
         try {
             $response->sendContent();
         } finally {
-            ob_end_flush();
+            // Buffers the Application left open would swallow the output of later Invocations,
+            // and ours may already be gone if it closed every buffer.
+            while (ob_get_level() > $level) {
+                ob_end_flush();
+            }
         }
 
         $values = $response->headers->allPreserveCaseWithoutCookies();

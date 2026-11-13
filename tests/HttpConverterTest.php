@@ -72,6 +72,18 @@ final class HttpConverterTest extends TestCase
         self::assertSame(['filter' => ['status' => 'open'], 'tags' => ['php']], $request->query->all());
     }
 
+    public function testQueryStringIgnoresTheConfiguredArgSeparator(): void
+    {
+        $separator = ini_set('arg_separator.output', '&amp;');
+        try {
+            $request = HttpConverter::toRequest(['queryStringParameters' => ['a' => '1', 'b' => '2']]);
+        } finally {
+            ini_set('arg_separator.output', (string) $separator);
+        }
+
+        self::assertSame(['a' => '1', 'b' => '2'], $request->query->all());
+    }
+
     public function testBase64BodyIsDecoded(): void
     {
         $binary = random_bytes(64)."\xff\xfe";
@@ -234,6 +246,19 @@ final class HttpConverterTest extends TestCase
         });
 
         self::assertSame('chunk 1, chunk 2', HttpConverter::toFunctionResponse($response)['body']);
+    }
+
+    public function testOutputBuffersLeftOpenByTheResponseAreClosed(): void
+    {
+        $level = ob_get_level();
+
+        $body = HttpConverter::toFunctionResponse(new StreamedResponse(static function (): void {
+            ob_start();
+            echo 'kept';
+        }))['body'];
+
+        self::assertSame($level, ob_get_level());
+        self::assertSame('kept', $body);
     }
 
     public function testBinaryFileResponseIsBuffered(): void
