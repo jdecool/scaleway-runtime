@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # End-to-end scenarios for the example application.
-# Usage: example/e2e/run.sh <base-url>
+# Usage: [SCALEWAY_CRON_SECRET=...] example/e2e/run.sh <base-url>
 #   against the Emulator:   example/e2e/run.sh http://127.0.0.1:8000
 #   against the deployment: example/e2e/run.sh "$(terraform -chdir=example/terraform output -raw endpoint)"
 # Requires bash, curl and php (used to read JSON and hash files).
@@ -115,6 +115,30 @@ expect "unknown route" "$status" 404
 # How a CRON trigger calls the function: a POST on "/" with its arguments as JSON body.
 status=$(request cron -X POST -H 'Content-Type: application/json' --data '{"job":"cleanup"}' "$base_url/")
 expect "CRON-like Invocation" "$(field cron args.job)" cleanup
+
+# A body naming a command runs nothing without the CRON secret: it is a plain HTTP body.
+status=$(request forged -X POST -H 'Content-Type: application/json' \
+    --data '{"command":"app:greet","args":{"name":"Mallory"},"secret":"guess"}' "$base_url/")
+expect "command without the CRON secret stays HTTP" "$status $(field forged args.command)" "200 app:greet"
+
+if [[ -n "${SCALEWAY_CRON_SECRET:-}" ]]; then
+    # command_body <name> <args JSON>: the arguments a CRON trigger running a command carries.
+    command_body() {
+        php -r 'echo json_encode(["command" => $argv[1], "args" => json_decode($argv[2]), "secret" => $argv[3]]);' "$1" "$2" "$SCALEWAY_CRON_SECRET"
+    }
+    status=$(request command -X POST --data "$(command_body app:greet '{"name":"Scaleway","--yell":true}')" "$base_url/")
+    expect "Command Invocation status" "$status" 200
+    expect "Command Invocation output" "$(cat "$tmp/command.body")" "HELLO SCALEWAY!"
+
+    status=$(request failed -X POST --data "$(command_body app:greet '{"--fail":true}')" "$base_url/")
+    expect "failed command status" "$status" 500
+    expect "failed command output" "$(grep -c 'Failing on purpose.' "$tmp/failed.body")" 1
+
+    request after "$base_url/hello?name=again" > /dev/null
+    expect "HTTP Invocation after commands" "$(field after message)" "Hello again!"
+else
+    echo "skip Command Invocations: set SCALEWAY_CRON_SECRET to the function's"
+fi
 
 if ((failures > 0)); then
     echo "$failures check(s) failed"

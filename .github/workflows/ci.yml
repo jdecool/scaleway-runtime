@@ -68,11 +68,11 @@ jobs:
         run: |
           unzip -q example/function.zip -d "$RUNNER_TEMP/function"
           chmod -R a-w "$RUNNER_TEMP/function"
-          APP_ENV=prod APP_SECRET=ci php "$RUNNER_TEMP/function/vendor/bin/scaleway-serve" 127.0.0.1:8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          APP_ENV=prod APP_SECRET=ci SCALEWAY_CRON_SECRET=ci-cron-secret php "$RUNNER_TEMP/function/vendor/bin/scaleway-serve" 127.0.0.1:8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
           timeout 10 bash -c 'until curl -sf http://127.0.0.1:8000/hello > /dev/null; do sleep 0.2; done'
 
       - name: End-to-end scenarios
-        run: example/e2e/run.sh http://127.0.0.1:8000
+        run: SCALEWAY_CRON_SECRET=ci-cron-secret example/e2e/run.sh http://127.0.0.1:8000
 
       - name: Emulator log
         if: always()

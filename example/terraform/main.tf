@@ -28,6 +28,12 @@ variable "app_secret" {
   sensitive = true
 }
 
+# Lets CRON triggers run console commands; see docs/adr/0005-authenticate-command-invocations-with-a-shared-secret.md.
+variable "cron_secret" {
+  type      = string
+  sensitive = true
+}
+
 provider "scaleway" {
   region = var.region
 }
@@ -56,7 +62,8 @@ resource "scaleway_function" "example" {
     APP_ENV = "prod"
   }
   secret_environment_variables = {
-    APP_SECRET = var.app_secret
+    APP_SECRET           = var.app_secret
+    SCALEWAY_CRON_SECRET = var.cron_secret
   }
 }
 
@@ -66,6 +73,14 @@ resource "scaleway_function_cron" "example" {
   name        = "example-cron"
   schedule    = "0 * * * *"
   args        = jsonencode({ job = "hourly" })
+}
+
+# Runs the app:greet console command every hour: the matching secret turns the arguments into a Command Invocation.
+resource "scaleway_function_cron" "example_command" {
+  function_id = scaleway_function.example.id
+  name        = "example-command"
+  schedule    = "30 * * * *"
+  args        = jsonencode({ command = "app:greet", args = { name = "CRON" }, secret = var.cron_secret })
 }
 
 output "endpoint" {
