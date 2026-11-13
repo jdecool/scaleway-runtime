@@ -5,7 +5,7 @@ A [Symfony Runtime](https://symfony.com/doc/current/components/runtime.html) tha
 ## Status
 
 Work in progress: not usable yet.
-See the [implementation plan](docs/plan.md) for the design and the roadmap.
+See the [implementation plan](docs/plan.md) for the design and the roadmap, and the [example application](example) for a working setup.
 
 ## Tools
 
