@@ -1,0 +1,5 @@
+{
+    "name": "jdecool/scaleway-runtime-probe",
+    "description": "Ships vendor/ to find out whether Scaleway runs Composer over it at deploy time",
+    "require": {}
+}
