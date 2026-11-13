@@ -121,6 +121,42 @@ final class IntegrationTest extends TestCase
         self::assertSame($first['pid'], $second['pid']);
     }
 
+    public function testRequestHandlerServesInvocationsThroughThePsr7Bridge(): void
+    {
+        [$first, $second] = $this->invoke([
+            [
+                'path' => '/upload',
+                'method' => 'POST',
+                'headers' => [
+                    'Host' => 'internal.local',
+                    'Content-Type' => 'multipart/form-data; boundary=b',
+                    'X-Forwarded-For' => '203.0.113.7',
+                    'X-Forwarded-Host' => 'api.example.com',
+                    'X-Forwarded-Proto' => 'https',
+                ],
+                'body' => base64_encode("--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nReport\r\n"
+                    ."--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"report.csv\"\r\n\r\na,b\r\n--b--\r\n"),
+                'isBase64Encoded' => true,
+            ],
+            ['path' => '/', 'headers' => ['Host' => 'internal.local']],
+        ], ['front_controller' => 'public/request-handler.php']);
+
+        self::assertSame(201, $first['statusCode']);
+        self::assertIsArray($first['headers']);
+        self::assertSame(['a', 'b'], $first['headers']['X-Multi'] ?? null);
+        self::assertSame(['first=1; path=/', 'second=2; path=/'], $first['headers']['Set-Cookie'] ?? null);
+        $first = $this->json($first);
+        $second = $this->json($second);
+
+        self::assertSame('https://api.example.com/upload', $first['uri']);
+        self::assertSame('203.0.113.7', $first['remoteAddr']);
+        self::assertSame(['title' => 'Report'], $first['parsedBody']);
+        self::assertSame(['doc' => ['name' => 'report.csv', 'content' => 'a,b']], $first['files']);
+        self::assertSame([], glob($this->dir.'/tmp/php*'), 'Uploaded files must be deleted after the Invocation.');
+        self::assertSame(['uri' => 'http://internal.local/', 'remoteAddr' => '127.0.0.1', 'handled' => 2, 'resets' => 1], array_intersect_key($second, ['uri' => 0, 'remoteAddr' => 0, 'handled' => 0, 'resets' => 0]));
+        self::assertSame($first['pid'], $second['pid']);
+    }
+
     /**
      * @param list<array<string, mixed>> $events
      * @param array<string, mixed>       $options runtime options on top of "project_dir"

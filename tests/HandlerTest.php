@@ -131,6 +131,19 @@ final class HandlerTest extends TestCase
         self::assertSame(200, $handler->invoke(['path' => '/'], [])['statusCode']);
     }
 
+    public function testRequestHandlerIsBuiltOnceAndKeepsServingAfterAnEscapedError(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/request-handler.php', 'debug' => false]);
+
+        $first = $handler->invoke(['path' => '/'], []);
+        self::assertSame(500, $handler->invoke(['path' => '/throw'], [])['statusCode']);
+        self::assertStringContainsString('Escaped on purpose.', $this->errorLog());
+        $third = $handler->invoke(['path' => '/'], []);
+
+        self::assertSame(201, $first['statusCode']);
+        self::assertSame(3, $this->decode($third)['handled'], 'The request handler must be reused across Invocations.');
+    }
+
     public function testFrontControllerMustReturnACallable(): void
     {
         $this->handler(['front_controller' => 'front-controllers/not-callable.php', 'debug' => false])->invoke([], []);
@@ -173,6 +186,20 @@ final class HandlerTest extends TestCase
         $_SERVER['APP_RUNTIME_OPTIONS'] = $options + ['error_handler' => false];
 
         return new Handler($composerDir, $this->errorLog);
+    }
+
+    /**
+     * @param array<mixed> $response
+     *
+     * @return array<mixed>
+     */
+    private function decode(array $response): array
+    {
+        self::assertIsString($response['body']);
+        $data = json_decode($response['body'], true, 512, \JSON_THROW_ON_ERROR);
+        self::assertIsArray($data);
+
+        return $data;
     }
 
     private function errorLog(): string

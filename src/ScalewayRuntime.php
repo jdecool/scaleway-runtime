@@ -6,7 +6,9 @@ namespace JDecool\ScalewayRuntime;
 
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Runner\InvocationRunner;
+use JDecool\ScalewayRuntime\Runner\RequestHandlerKernel;
 use JDecool\ScalewayRuntime\Runner\ResponseKernel;
+use Psr\Http\Server\RequestHandlerInterface;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
@@ -24,6 +26,7 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  *
  * A Front Controller closure returning a Response is called again for every Invocation, and one
  * taking a Request gets the Invocation's Request (see docs/adr/0004-call-response-front-controllers-per-invocation.md).
+ * A PSR-15 request handler is built once and reused like a Kernel; it needs symfony/psr-http-message-bridge and nyholm/psr7.
  */
 class ScalewayRuntime extends SymfonyRuntime
 {
@@ -92,6 +95,7 @@ class ScalewayRuntime extends SymfonyRuntime
         return match (true) {
             $application instanceof HttpKernelInterface => new HttpKernelRunner($application, $errorLog),
             $application instanceof Response => new HttpKernelRunner(new ResponseKernel($respond, $application), $errorLog),
+            $application instanceof RequestHandlerInterface => new HttpKernelRunner(new RequestHandlerKernel($application), $errorLog),
             default => throw new \LogicException(\sprintf('"%s" cannot run Applications of type "%s".', static::class, get_debug_type($application))),
         };
     }
