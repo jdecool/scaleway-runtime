@@ -25,7 +25,7 @@ The application's unchanged `public/index.php`, returning the closure that build
 _Avoid_: Handler, bootstrap
 
 **Application**:
-The object built by the Front Controller closure (Kernel, PSR-15 handler, Console application, callable).
+The object built by the Front Controller closure (Kernel, Response, PSR-15 handler, Console application, callable).
 _Avoid_: App, service
 
 **Warm Process**:

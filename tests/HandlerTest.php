@@ -103,6 +103,34 @@ final class HandlerTest extends TestCase
         self::assertStringContainsString('cannot run Applications of type "stdClass"', $this->errorLog());
     }
 
+    public function testResponseFrontControllerIsCalledForEveryInvocation(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/response.php']);
+
+        self::assertSame('call #1', $handler->invoke([], [])['body']);
+        self::assertSame('call #2', $handler->invoke([], [])['body']);
+    }
+
+    public function testResponseFrontControllerGetsTheRequestOfEachInvocation(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/request-response.php']);
+
+        $first = $handler->invoke(['queryStringParameters' => ['name' => 'Ada'], 'headers' => ['X-Forwarded-For' => '203.0.113.7']], []);
+        $second = $handler->invoke(['queryStringParameters' => ['name' => 'Grace']], []);
+
+        self::assertSame('Hello Ada from 203.0.113.7', $first['body']);
+        self::assertSame('Hello Grace from 127.0.0.1', $second['body']);
+    }
+
+    public function testResponseFrontControllerReturningSomethingElseFailsTheInvocation(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/request-response.php', 'debug' => false]);
+
+        self::assertSame(500, $handler->invoke(['path' => '/nothing'], [])['statusCode']);
+        self::assertStringContainsString('must return one for every Invocation, "null" returned', $this->errorLog());
+        self::assertSame(200, $handler->invoke(['path' => '/'], [])['statusCode']);
+    }
+
     public function testFrontControllerMustReturnACallable(): void
     {
         $this->handler(['front_controller' => 'front-controllers/not-callable.php', 'debug' => false])->invoke([], []);

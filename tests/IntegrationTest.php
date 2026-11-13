@@ -103,12 +103,31 @@ final class IntegrationTest extends TestCase
         self::assertSame($this->projectDir.'/var/cache/prod', $state['buildDir']);
     }
 
+    public function testResponseFrontControllerIsCalledForEveryInvocationWithItsRequest(): void
+    {
+        [$first, $second] = $this->invoke([
+            ['path' => '/', 'queryStringParameters' => ['name' => 'Ada'], 'headers' => ['X-Forwarded-Proto' => 'https']],
+            ['path' => '/', 'queryStringParameters' => ['name' => 'Grace']],
+        ], ['front_controller' => 'public/hello.php']);
+
+        self::assertSame(200, $first['statusCode']);
+        self::assertIsArray($first['headers']);
+        self::assertSame('application/json', $first['headers']['Content-Type'] ?? null);
+        $first = $this->json($first);
+        $second = $this->json($second);
+
+        self::assertSame(['message' => 'Hello Ada!', 'secure' => true, 'env' => 'prod', 'calls' => 1], array_diff_key($first, ['pid' => 0]));
+        self::assertSame(['message' => 'Hello Grace!', 'secure' => false, 'env' => 'prod', 'calls' => 2], array_diff_key($second, ['pid' => 0]));
+        self::assertSame($first['pid'], $second['pid']);
+    }
+
     /**
      * @param list<array<string, mixed>> $events
+     * @param array<string, mixed>       $options runtime options on top of "project_dir"
      *
      * @return array<array<mixed>>
      */
-    private function invoke(array $events): array
+    private function invoke(array $events, array $options = []): array
     {
         $driver = 'require $argv[1]; echo json_encode(array_map(fn ($event) => handle($event, []), json_decode(stream_get_contents(STDIN), true)));';
         $process = proc_open(
@@ -119,7 +138,7 @@ final class IntegrationTest extends TestCase
             [
                 'APP_ENV' => 'prod',
                 'APP_DEBUG' => '0',
-                'APP_RUNTIME_OPTIONS' => json_encode(['project_dir' => $this->projectDir], \JSON_THROW_ON_ERROR),
+                'APP_RUNTIME_OPTIONS' => json_encode(['project_dir' => $this->projectDir] + $options, \JSON_THROW_ON_ERROR),
                 'TMPDIR' => $this->dir.'/tmp',
                 'PATH' => getenv('PATH') ?: '',
             ],

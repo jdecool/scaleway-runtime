@@ -6,6 +6,9 @@ namespace JDecool\ScalewayRuntime;
 
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Runner\InvocationRunner;
+use JDecool\ScalewayRuntime\Runner\ResponseKernel;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\Runtime\SymfonyRuntime;
 
@@ -18,9 +21,15 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  * When the project's var/ directory is not writable (the deployed code may be read-only),
  * the cache and log dirs move to the system temp dir through APP_CACHE_DIR and APP_LOG_DIR,
  * while APP_BUILD_DIR keeps the container warmed at build time.
+ *
+ * A Front Controller closure returning a Response is called again for every Invocation, and one
+ * taking a Request gets the Invocation's Request (see docs/adr/0004-call-response-front-controllers-per-invocation.md).
  */
 class ScalewayRuntime extends SymfonyRuntime
 {
+    /** The Request of the Invocation the Front Controller closure is being called for. */
+    private ?Request $request = null;
+
     /**
      * @param array<mixed> $options see SymfonyRuntime, plus "front_controller"
      */
@@ -57,12 +66,39 @@ class ScalewayRuntime extends SymfonyRuntime
             throw new \TypeError(\sprintf('Invalid return value: callable expected, "%s" returned from "%s".', get_debug_type($app), $file));
         }
 
-        [$app, $args] = $this->getResolver($app)->resolve();
+        $resolver = $this->getResolver($app);
+        $respond = function (Request $request) use ($resolver): mixed {
+            $this->request = $request;
+            try {
+                [$app, $args] = $resolver->resolve();
+
+                return $app(...$args);
+            } finally {
+                $this->request = null;
+            }
+        };
+
+        // No Request exists before the first Invocation, so such a closure cannot be called yet.
+        foreach (new \ReflectionFunction($app(...))->getParameters() as $parameter) {
+            $type = $parameter->getType();
+            if ($type instanceof \ReflectionNamedType && Request::class === $type->getName()) {
+                return new HttpKernelRunner(new ResponseKernel($respond), $errorLog);
+            }
+        }
+
+        [$app, $args] = $resolver->resolve();
         $application = $app(...$args);
 
         return match (true) {
             $application instanceof HttpKernelInterface => new HttpKernelRunner($application, $errorLog),
+            $application instanceof Response => new HttpKernelRunner(new ResponseKernel($respond, $application), $errorLog),
             default => throw new \LogicException(\sprintf('"%s" cannot run Applications of type "%s".', static::class, get_debug_type($application))),
         };
+    }
+
+    protected function resolveType(string $type): mixed
+    {
+        // SymfonyRuntime builds it from PHP globals, which never describe an Invocation.
+        return Request::class === $type ? $this->request : parent::resolveType($type);
     }
 }

@@ -10,6 +10,7 @@ Vocabulary follows [GLOSSARY.md](../GLOSSARY.md); decisions are recorded in [doc
 - The Handler drives `ScalewayRuntime extends SymfonyRuntime` itself, without `vendor/autoload_runtime.php` (ADR 0001).
 - The Front Controller is the unchanged `public/index.php`; its path is the `front_controller` runtime option (`extra.runtime` or `APP_RUNTIME_OPTIONS`).
 - The Application is booted once per Warm Process; between Invocations the runtime calls `terminate()` and the `services_resetter`; a failed boot is retried on the next Invocation (ADR 0002).
+- A Front Controller returning a Response is called for every Invocation, a `Request` argument receiving the Invocation's Request (ADR 0004).
 - HTTP mapping: base64 bodies decoded on input; output marked `isBase64Encoded` when the body is not valid UTF-8; multi-value headers sent as arrays; streamed and binary file responses buffered; query string rebuilt from `queryStringParameters`; `X-Forwarded-*` trusted; platform limits documented.
 - Errors escaping the Application are logged to stderr and returned as a 500 Function Response (generic body, details when `APP_DEBUG=1`).
 - Cache is warmed at build time; cache and log dirs fall back to `/tmp` when the project dir is not writable; logs go to stderr.
