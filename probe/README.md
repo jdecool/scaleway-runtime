@@ -71,6 +71,14 @@ sleep 330; curl -sS "$PROBE_URL/?mode=history" > 09-history.ndjson
 
 10. In the Scaleway console, open the function's logs (Cockpit) and export the lines starting with `probe:` for the last hour, including the CRON ones, plus the `probe: written to stdout` and exception lines.
 
+11. Compare a CRON Event (step 9 or 10) with the HTTP one of `01-facts.json`, `event` and `context` alike, and list what only the CRON one has or lacks: headers (a trigger name or id, a token, `User-Agent`, `X-Forwarded-For`), method, path, context fields.
+    Then send each such header from a plain HTTP call, and check whether it reaches the Event as sent, is overwritten, or is removed: only a marker the platform sets itself can tell CRON Invocations from HTTP ones.
+
+```sh
+# Replace the example header with the CRON-only headers found, one -H per header.
+curl -sS "$PROBE_URL/" -H 'X-Example-Cron-Header: forged' > 11-forged-cron-marker.json
+```
+
 ## Report back
 
 - All files of `probe-results/` (except `random.bin` and `body-*.txt`) and the exported logs.
@@ -82,6 +90,7 @@ The answers the files settle:
 | --- | --- |
 | HTTP Event shape (keys, path encoding, repeated query keys, header name case) | `01-facts.json` `event` |
 | CRON Event shape (method, path, body, headers) | `09-history.ndjson`, logs |
+| CRON marker: what only CRON Events carry, and whether HTTP clients can forge it ([ADR 0005](../docs/adr/0005-authenticate-command-invocations-with-a-shared-secret.md)) | `09-history.ndjson`, logs, `11-forged-cron-marker.json` |
 | Context type and content | `01-facts.json` `contextType`, `context` |
 | Warm Process reuse | `02-warm.txt` |
 | X-Forwarded-* spoofing | `03-forwarded.json` `event.headers` |
