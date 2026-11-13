@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    name: PHP ${{ matrix.php }} - Symfony ${{ matrix.symfony }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.4', '8.5']
+        symfony: ['7.4.*', '8.*']
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+
+      # No lock file for a library, so pinning the constraints is what selects the Symfony line under test.
+      - name: Pin Symfony version
+        run: >-
+          composer require --no-update --no-interaction
+          'symfony/http-foundation:${{ matrix.symfony }}'
+          'symfony/http-kernel:${{ matrix.symfony }}'
+          'symfony/runtime:${{ matrix.symfony }}'
+
+      - uses: ramsey/composer-install@v4
+
+      - name: PHP-CS-Fixer
+        run: composer cs
+
+      - name: PHPStan
+        run: composer phpstan
+
+      - name: PHPUnit
+        run: composer test
