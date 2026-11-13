@@ -210,6 +210,14 @@ final class HandlerTest extends TestCase
         self::assertStringContainsString('Command Invocation rejected', $this->errorLog());
     }
 
+    public function testFailedResetAfterACommandKeepsItsResponseAndIsLogged(): void
+    {
+        $response = $this->handler(['front_controller' => 'front-controllers/console-reset-fails.php'])->invoke($this->commandEvent('app:ok'), []);
+
+        self::assertSame(200, $response['statusCode']);
+        self::assertStringContainsString('Service reset failed: LogicException: Reset failed on purpose.', $this->errorLog());
+    }
+
     public function testCommandFrontControllerRunsItsCommandWhateverTheName(): void
     {
         $handler = $this->handler(['front_controller' => 'front-controllers/command.php']);

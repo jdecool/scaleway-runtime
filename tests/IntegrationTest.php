@@ -186,6 +186,22 @@ final class IntegrationTest extends TestCase
         self::assertSame(404, $forged['statusCode'], 'A body with a wrong secret is a plain HTTP POST.');
     }
 
+    public function testConsoleFrontControllerOfAKernelRunsCommandsOnly(): void
+    {
+        [$first, $second, $http] = $this->invoke([
+            ['method' => 'POST', 'body' => '{"command":"app:count","args":{"--times":"3"},"secret":"cron-secret"}'],
+            ['method' => 'POST', 'body' => '{"command":"app:count","secret":"cron-secret"}'],
+            ['path' => '/state'],
+        ], ['front_controller' => 'bin/console.php']);
+
+        self::assertSame(200, $first['statusCode']);
+        self::assertIsString($first['body']);
+        self::assertStringStartsWith('count=3 kernelInstances=1 ', $first['body']);
+        self::assertIsString($second['body']);
+        self::assertStringStartsWith('count=1 kernelInstances=1 ', $second['body'], 'Services must be reset after each command.');
+        self::assertSame(403, $http['statusCode']);
+    }
+
     /**
      * @param list<array<string, mixed>> $events
      * @param array<string, mixed>       $options runtime options on top of "project_dir"
