@@ -1,6 +1,6 @@
 # A Front Controller returning a Response is called for every Invocation
 
-SymfonyRuntime calls the Front Controller closure once per process: under FPM that is once per request, but its FrankenPHP worker mode serves the Response built at startup to every request, and resolves a `Request` argument from the globals of the worker's startup.
+SymfonyRuntime calls the Front Controller closure once per process: under FPM that is once per request, but its FrankenPHP worker mode (symfony/runtime 8.1+) serves the Response built at startup to every request, and resolves a `Request` argument from the globals of the worker's startup.
 In a Warm Process that would freeze the Response (a `StreamedResponse` would even be empty from its second sending on) and make a `Request` argument meaningless.
 We instead call the closure again for every Invocation, a `Request` argument receiving the Request built from the Invocation's Event, which keeps the FPM semantics and makes `fn (Request $request): Response` a function-like Front Controller.
 
