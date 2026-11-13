@@ -7,5 +7,12 @@ parameters:
     paths:
         - src
         - tests
+        - resources
         - bin/scaleway-init
         - bin/scaleway-package
+        - bin/scaleway-serve
+    excludePaths:
+        # The stub users commit stays as short as possible, without annotations.
+        - resources/handler.php
+    scanFiles:
+        - resources/handler.php

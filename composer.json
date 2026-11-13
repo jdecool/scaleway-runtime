@@ -33,7 +33,8 @@
     },
     "bin": [
         "bin/scaleway-init",
-        "bin/scaleway-package"
+        "bin/scaleway-package",
+        "bin/scaleway-serve"
     ],
     "autoload-dev": {
         "psr-4": {

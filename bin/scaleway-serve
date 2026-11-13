@@ -1,0 +1,88 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Composer\InstalledVersions;
+
+$autoload = (string) realpath(is_string($_composer_autoload_path ?? null) ? $_composer_autoload_path : __DIR__.'/../vendor/autoload.php');
+require $autoload;
+
+if (in_array($argv[1] ?? null, ['-h', '--help'], true)) {
+    echo 'Usage: scaleway-serve [<host>:<port>]  (default: 127.0.0.1:8000)', \PHP_EOL;
+    exit(0);
+}
+
+$address = $argv[1] ?? '127.0.0.1:8000';
+$handlerFile = realpath(InstalledVersions::getRootPackage()['install_path']).'/handler.php';
+if (!is_file($handlerFile)) {
+    fwrite(\STDERR, "{$handlerFile} is missing: run vendor/bin/scaleway-init first.".\PHP_EOL);
+    exit(1);
+}
+
+// shortcut: another process may grab the port before the worker binds it; rerun if the worker fails to listen.
+$probe = stream_socket_server('tcp://127.0.0.1:0') ?: exit(1);
+$workerPort = (int) substr((string) strrchr((string) stream_socket_get_name($probe, false), ':'), 1);
+fclose($probe);
+
+/**
+ * @param list<string>               $command
+ * @param array<string, string>|null $env
+ *
+ * @return resource
+ */
+function start(array $command, ?array $env = null)
+{
+    $process = proc_open($command, [\STDIN, \STDOUT, \STDERR], $pipes, null, $env);
+    if (false === $process) {
+        fwrite(\STDERR, 'Cannot start '.implode(' ', $command).\PHP_EOL);
+        exit(1);
+    }
+
+    return $process;
+}
+
+$startWorker = static function () use ($handlerFile, $workerPort) {
+    $worker = start([\PHP_BINARY, __DIR__.'/../resources/emulator/worker.php', $handlerFile, (string) $workerPort]);
+    // Waits until it listens, so the first requests do not find the port closed.
+    for ($i = 0; $i < 100 && proc_get_status($worker)['running']; ++$i) {
+        if (false !== $connection = @stream_socket_client('tcp://127.0.0.1:'.$workerPort)) {
+            fclose($connection);
+            break;
+        }
+        usleep(50_000);
+    }
+
+    return $worker;
+};
+
+$worker = $startWorker();
+$server = start(
+    [\PHP_BINARY, '-d', 'enable_post_data_reading=0', '-d', 'expose_php=0', '-d', 'default_mimetype=', '-S', $address, __DIR__.'/../resources/emulator/router.php'],
+    ['SCALEWAY_EMULATOR_AUTOLOAD' => $autoload, 'SCALEWAY_EMULATOR_WORKER_PORT' => (string) $workerPort] + getenv(),
+);
+// Children outlive a killed parent, so a SIGTERM would leave the port and the worker busy.
+if (function_exists('pcntl_async_signals')) {
+    pcntl_async_signals(true);
+    foreach ([\SIGINT, \SIGTERM] as $signal) {
+        pcntl_signal($signal, static function () use (&$worker, $server): never {
+            proc_terminate($worker);
+            proc_terminate($server);
+            exit(0);
+        });
+    }
+}
+fwrite(\STDERR, "Emulator listening on http://{$address}, Warm Process pid ".proc_get_status($worker)['pid'].\PHP_EOL);
+
+while (($status = proc_get_status($server))['running']) {
+    // A dead Warm Process is replaced, as the platform starts a new instance after a crash.
+    if (!proc_get_status($worker)['running']) {
+        $worker = $startWorker();
+        fwrite(\STDERR, 'Emulator: the Warm Process exited, started a new one with pid '.proc_get_status($worker)['pid'].\PHP_EOL);
+        // Keeps an application that cannot even load from flooding the console.
+        sleep(1);
+    }
+    usleep(200_000);
+}
+proc_terminate($worker);
+exit($status['exitcode']);
