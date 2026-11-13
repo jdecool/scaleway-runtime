@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace JDecool\ScalewayRuntime;
 
+use Riverline\MultiPartParser\StreamedPart;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -55,6 +57,7 @@ final class HttpConverter
         ];
         $cookies = [];
         $contentType = '';
+        $contentTypeHeader = '';
         foreach (self::stringMap($event['headers'] ?? null) as $name => $value) {
             $key = strtoupper(str_replace('-', '_', $name));
             // PHP exposes these two without the HTTP_ prefix, and HeaderBag expects them that way.
@@ -62,19 +65,77 @@ final class HttpConverter
             if ('COOKIE' === $key) {
                 $cookies = self::parseCookies($value);
             } elseif ('CONTENT_TYPE' === $key) {
+                $contentTypeHeader = $value;
                 $contentType = strtolower($value);
             }
         }
 
         // PHP only parses form bodies into $_POST for POST; Symfony's createFromGlobals() covers the other body methods.
-        $post = [];
+        $post = $files = [];
         if (\in_array($method, ['POST', 'PUT', 'DELETE', 'PATCH', 'QUERY'], true)
             && str_starts_with($contentType, 'application/x-www-form-urlencoded')
         ) {
             parse_str($body, $post);
+        } elseif ('POST' === $method && str_starts_with($contentType, 'multipart/form-data')) {
+            [$post, $files] = self::parseMultipart($contentTypeHeader, $body);
         }
 
-        return new Request($query, $post, [], $cookies, [], $server, $body);
+        return new Request($query, $post, [], $cookies, $files, $server, $body);
+    }
+
+    /**
+     * Fills fields and files like PHP does for a multipart POST: files land in temp files,
+     * which the caller must delete once the Invocation is over, as PHP does at the end of a request.
+     *
+     * @return array{array<mixed>, array<mixed>}
+     */
+    private static function parseMultipart(string $contentType, string $body): array
+    {
+        $stream = fopen('php://temp', 'r+');
+        \assert(false !== $stream);
+        fwrite($stream, 'Content-Type: '.$contentType."\r\n\r\n".$body);
+        try {
+            $parts = new StreamedPart($stream)->getParts();
+        } catch (\InvalidArgumentException|\LogicException) {
+            // PHP leaves $_POST and $_FILES empty for a malformed body rather than failing the request.
+            return [[], []];
+        } finally {
+            fclose($stream);
+        }
+
+        $fields = $fileFields = $uploads = [];
+        foreach ($parts as $part) {
+            $name = $part->getName();
+            if (!\is_string($name) || '' === $name) {
+                continue;
+            }
+            // Field names go through parse_str() so "a[b][]" nests exactly as PHP nests it.
+            if (!$part->isFile()) {
+                $fields[] = rawurlencode($name).'='.rawurlencode((string) $part->getBody());
+                continue;
+            }
+
+            $fileFields[] = rawurlencode($name).'='.\count($uploads);
+            $fileName = (string) $part->getFileName();
+            if ('' === $fileName) {
+                // A file input left empty: the $_FILES entry PHP builds, which Symfony's FileBag turns into null.
+                $uploads[] = ['name' => '', 'type' => '', 'tmp_name' => '', 'error' => \UPLOAD_ERR_NO_FILE, 'size' => 0];
+                continue;
+            }
+            $path = tempnam(sys_get_temp_dir(), 'php');
+            \assert(false !== $path);
+            file_put_contents($path, (string) $part->getBody());
+            // Test mode, as the file was not uploaded through the SAPI and is_uploaded_file() would reject it.
+            $uploads[] = new UploadedFile($path, $fileName, (string) $part->getMimeType(), \UPLOAD_ERR_OK, true);
+        }
+
+        parse_str(implode('&', $fields), $post);
+        parse_str(implode('&', $fileFields), $files);
+        array_walk_recursive($files, static function (mixed &$index) use ($uploads): void {
+            $index = \is_string($index) ? $uploads[(int) $index] : null;
+        });
+
+        return [$post, $files];
     }
 
     /**

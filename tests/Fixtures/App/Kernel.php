@@ -6,6 +6,7 @@ namespace JDecool\ScalewayRuntime\Tests\Fixtures\App;
 
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
@@ -49,6 +50,18 @@ final class Kernel extends BaseKernel
         ]);
     }
 
+    public function upload(Request $request): JsonResponse
+    {
+        $file = $request->files->get('doc');
+        \assert($file instanceof UploadedFile);
+
+        return new JsonResponse([
+            'title' => $request->request->get('title'),
+            'name' => $file->getClientOriginalName(),
+            'content' => $file->getContent(),
+        ]);
+    }
+
     private function configureContainer(ContainerConfigurator $container): void
     {
         $container->extension('framework', ['secret' => 'fixture', 'http_method_override' => false]);
@@ -61,5 +74,6 @@ final class Kernel extends BaseKernel
     private function configureRoutes(RoutingConfigurator $routes): void
     {
         $routes->add('state', '/state')->controller('kernel::state');
+        $routes->add('upload', '/upload')->controller('kernel::upload');
     }
 }

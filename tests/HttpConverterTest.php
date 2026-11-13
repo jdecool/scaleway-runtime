@@ -8,6 +8,7 @@ use JDecool\ScalewayRuntime\HttpConverter;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Cookie;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -116,6 +117,94 @@ final class HttpConverterTest extends TestCase
         $request = HttpConverter::toRequest([
             'headers' => ['Content-Type' => 'application/x-www-form-urlencoded'],
             'body' => 'name=Jane',
+        ]);
+
+        self::assertSame([], $request->request->all());
+    }
+
+    public function testMultipartBodyIsParsedLikePhp(): void
+    {
+        $body = implode("\r\n", [
+            '--XyZ',
+            'Content-Disposition: form-data; name="title"',
+            '',
+            'Hello & welcome',
+            '--XyZ',
+            'Content-Disposition: form-data; name="tags[]"',
+            '',
+            'php',
+            '--XyZ',
+            'Content-Disposition: form-data; name="doc[cv]"; filename="C:\\Users\\me\\résumé.pdf"',
+            'Content-Type: application/pdf',
+            '',
+            "%PDF\x00\xff",
+            '--XyZ',
+            'Content-Disposition: form-data; name="photos[]"; filename="a.png"',
+            'Content-Type: image/png',
+            '',
+            '',
+            '--XyZ',
+            'Content-Disposition: form-data; name="avatar"; filename=""',
+            'Content-Type: application/octet-stream',
+            '',
+            '',
+            '--XyZ--',
+            '',
+        ]);
+
+        $request = HttpConverter::toRequest([
+            'method' => 'POST',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=XyZ'],
+            'body' => base64_encode($body),
+            'isBase64Encoded' => true,
+        ]);
+
+        self::assertSame(['title' => 'Hello & welcome', 'tags' => ['php']], $request->request->all());
+        self::assertNull($request->files->get('avatar'));
+
+        $docs = $request->files->get('doc');
+        self::assertIsArray($docs);
+        $doc = $docs['cv'];
+        self::assertInstanceOf(UploadedFile::class, $doc);
+        self::assertTrue($doc->isValid());
+        self::assertSame('résumé.pdf', $doc->getClientOriginalName());
+        self::assertSame('application/pdf', $doc->getClientMimeType());
+        self::assertSame("%PDF\x00\xff", file_get_contents($doc->getPathname()));
+
+        $photos = $request->files->get('photos');
+        self::assertIsArray($photos);
+        $photo = $photos[0];
+        self::assertInstanceOf(UploadedFile::class, $photo);
+        self::assertSame(0, $photo->getSize());
+
+        // The file can be moved like a real upload.
+        $target = sys_get_temp_dir().'/scaleway-runtime-'.bin2hex(random_bytes(4));
+        $moved = $doc->move($target);
+        self::assertSame("%PDF\x00\xff", file_get_contents($moved->getPathname()));
+        unlink($moved->getPathname());
+        rmdir($target);
+        unlink($photo->getPathname());
+    }
+
+    public function testMalformedMultipartBodyIsIgnoredLikePhp(): void
+    {
+        $request = HttpConverter::toRequest([
+            'method' => 'POST',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=XyZ'],
+            'body' => 'not multipart at all',
+        ]);
+
+        self::assertSame([], $request->request->all());
+        self::assertSame([], $request->files->all());
+        self::assertSame('not multipart at all', $request->getContent());
+    }
+
+    public function testMultipartBodyIsOnlyParsedForPostLikePhp(): void
+    {
+        $request = HttpConverter::toRequest([
+            'method' => 'PUT',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=b'],
+            'body' => "--b\r\nContent-Disposition: form-data; name=\"a\"\r\n\r\n1\r\n--b--\r\n",
         ]);
 
         self::assertSame([], $request->request->all());

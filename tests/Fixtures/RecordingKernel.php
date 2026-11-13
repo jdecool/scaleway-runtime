@@ -17,6 +17,7 @@ final class RecordingKernel implements HttpKernelInterface, TerminableInterface
 
     public int $handled = 0;
     public int $terminated = 0;
+    public ?Request $lastRequest = null;
 
     public static function build(): self
     {
@@ -38,6 +39,7 @@ final class RecordingKernel implements HttpKernelInterface, TerminableInterface
 
     public function handle(Request $request, int $type = self::MAIN_REQUEST, bool $catch = true): Response
     {
+        $this->lastRequest = $request;
         if ('/throw' === $request->getPathInfo()) {
             throw new \LogicException('Escaped on purpose.');
         }

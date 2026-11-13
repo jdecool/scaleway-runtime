@@ -8,6 +8,7 @@ use JDecool\ScalewayRuntime\HttpConverter;
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Tests\Fixtures\RecordingKernel;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\Request;
 
 final class HttpKernelRunnerTest extends TestCase
@@ -65,5 +66,21 @@ final class HttpKernelRunnerTest extends TestCase
         self::assertSame('handled #1 /terminate-fails', $functionResponse['body']);
         rewind($this->errorLog);
         self::assertStringContainsString('Termination failed on purpose.', (string) stream_get_contents($this->errorLog));
+    }
+
+    public function testUploadedFilesAreDeletedAfterTheInvocation(): void
+    {
+        $kernel = new RecordingKernel();
+
+        new HttpKernelRunner($kernel, $this->errorLog)->invoke([
+            'path' => '/',
+            'method' => 'POST',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=b'],
+            'body' => "--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"a.txt\"\r\n\r\nhello\r\n--b--\r\n",
+        ], []);
+
+        $file = $kernel->lastRequest?->files->get('doc');
+        self::assertInstanceOf(UploadedFile::class, $file);
+        self::assertFileDoesNotExist($file->getPathname());
     }
 }

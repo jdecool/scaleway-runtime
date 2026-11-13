@@ -74,6 +74,22 @@ final class IntegrationTest extends TestCase
         self::assertSame(404, $response['statusCode']);
     }
 
+    public function testMultipartUploadReachesTheController(): void
+    {
+        [$response] = $this->invoke([[
+            'path' => '/upload',
+            'method' => 'POST',
+            'headers' => ['Content-Type' => 'multipart/form-data; boundary=b'],
+            'body' => base64_encode("--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nReport\r\n"
+                ."--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"report.csv\"\r\nContent-Type: text/csv\r\n\r\na,b\n1,2\r\n--b--\r\n"),
+            'isBase64Encoded' => true,
+        ]]);
+
+        self::assertSame(200, $response['statusCode']);
+        self::assertSame(['title' => 'Report', 'name' => 'report.csv', 'content' => "a,b\n1,2"], $this->json($response));
+        self::assertSame([], glob($this->dir.'/tmp/php*'), 'Uploaded files must be deleted after the Invocation.');
+    }
+
     public function testReadOnlyProjectUsesTheWarmedBuildDirAndATempCacheDir(): void
     {
         $this->invoke([['path' => '/state']]);
