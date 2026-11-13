@@ -17,6 +17,9 @@ jobs:
       matrix:
         php: ['8.4', '8.5']
         symfony: ['7.4.*', '8.*']
+    env:
+      # Flex caps every symfony/* package, transitive ones included, so the whole stack matches the line under test.
+      SYMFONY_REQUIRE: ${{ matrix.symfony }}
     steps:
       - uses: actions/checkout@v7
 
@@ -24,14 +27,10 @@ jobs:
         with:
           php-version: ${{ matrix.php }}
           coverage: none
+          tools: flex
 
-      # No lock file for a library, so pinning the constraints is what selects the Symfony line under test.
-      - name: Pin Symfony version
-        run: >-
-          composer require --no-update --no-interaction
-          'symfony/http-foundation:${{ matrix.symfony }}'
-          'symfony/http-kernel:${{ matrix.symfony }}'
-          'symfony/runtime:${{ matrix.symfony }}'
+      - name: Validate composer.json
+        run: composer validate --strict
 
       - uses: ramsey/composer-install@v4
 
