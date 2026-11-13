@@ -1,0 +1,9 @@
+{
+    "extra": {
+        "runtime": {
+            "class": "Ignored\\Runtime",
+            "project_dir": "..",
+            "front_controller": "front-controllers/recording.php"
+        }
+    }
+}
