@@ -561,7 +561,7 @@ The repository holds:
 - `tests/`: PHPUnit tests, packaging included;
 - `example/`: a demo Symfony application requiring the package, with Terraform code to deploy it;
 - `probe/`: a dependency-free function measuring the platform facts, and its [results](docs/probe-results.md);
-- `docs/`: the [implementation plan](docs/plan.md) and the [ADRs](docs/adr).
+- `docs/`: the [ADRs](docs/adr).
 
 ## License
 

@@ -1,7 +1,7 @@
 # Platform probe
 
 A dependency-free PHP function that reports what Scaleway Serverless Functions pass to, and accept from, a PHP handler.
-Its answers settle the open questions of the [implementation plan](../docs/plan.md) before the runtime relies on them.
+Its answers settle the platform facts the runtime relies on.
 
 It was run on 2026-11-14 on `php85` and `php84`: the results are in [docs/probe-results.md](../docs/probe-results.md), and the runtime follows them.
 Rerun it to check a platform change, and update that file.
