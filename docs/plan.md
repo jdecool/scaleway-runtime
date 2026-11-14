@@ -58,5 +58,7 @@ For that, the example logs from the `info` level to stderr, and no longer logs t
 
 Absolute URLs were then verified on that deployment, without `host`, with its `domain_name` and with a custom-domain-like value ([probe results](probe-results.md#absolute-urls)): the router, `getUri()` and redirects carry the `host`, never a forged `X-Forwarded-Host`, and `framework.trusted_hosts` answers a 400 until `host` matches it.
 
-1. Measure what the probe left open: what a deployment with a failing Composer script serves.
-   Where logs go was measured on 2026-11-14 ([probe results](probe-results.md#logs)): the runtime's stderr lines reach Cockpit one entry per line, with a `DEBUG - ` prefix and a ` source=user stream=stderr` suffix.
+Where logs go was measured on 2026-11-14 ([probe results](probe-results.md#logs)): the runtime's stderr lines reach Cockpit one entry per line, with a `DEBUG - ` prefix and a ` source=user stream=stderr` suffix.
+What a deployment whose Composer script or install fails serves was then measured ([probe results](probe-results.md#failed-scripts-and-installs)): always the new code, with a working `vendor/` after a failing script and none after a failing install, the function being `ready` and Composer's output shown nowhere.
+
+Nothing remains.

@@ -23,6 +23,25 @@ Client addresses are replaced with documentation addresses (`2001:db8::1`, `203.
 - A failing Composer script does not fail the deployment: the function still becomes `ready`.
 - With `composer.json` and `vendor/` in a subdirectory instead of the zip root, Scaleway does not run Composer and keeps the shipped `vendor/`.
 
+### Failed scripts and installs
+
+Measured on 2026-11-14 on `php85` with a scratch function requiring `psr/log`, whose `handler.php` answers a version string set per zip, whether `vendor/autoload.php` loads `Psr\Log\LoggerInterface`, and the marker a `post-install-cmd` writes; the function was deployed with Terraform, one zip after the other, and a second function deployed once.
+
+| Deployment | Function after the apply | What answers |
+| --- | --- | --- |
+| Second function, first deployment, `post-install-cmd` writing its marker then exiting `1` | `ready`, `error_message` and `build_message` null | The new code, with a complete `vendor/` and a working autoloader, and the script's marker |
+| `v1`, scripts succeeding | `ready` | `v1`, with `vendor/` and the marker |
+| `v2` over `v1`, `post-install-cmd` writing its marker then exiting `1` | `ready`, `error_message` and `build_message` null | `v2`, with a complete `vendor/` and a working autoloader, and `v2`'s marker |
+| `v3` over `v2`, the lock also installing a package whose dist URL does not resolve | `ready`, `error_message` and `build_message` null | `v3`, without any `vendor/` nor marker: the zip's files only |
+| `v4` over `v3`, the same failing lock, with a `handler.php` requiring `vendor/autoload.php` first as the one `scaleway-init` writes | `ready` | `500` with `Error 500: Internal Server Error`, and the log line `Warning: require(/home/app/function/vendor/autoload.php): Failed to open stream: No such file or directory in /home/app/function/handler.php on line 4` on stdout; later Invocations answered, as this `handle()` uses nothing from `vendor/` |
+
+- A deployment always serves the new zip: Scaleway never keeps the previous version, whatever Composer does.
+- `post-install-cmd` runs once `vendor/` and its autoloader are complete, as with a local `composer install`, so a failing script leaves a working install behind.
+- A failing install leaves no `vendor/` at all, Composer downloading every package before installing any.
+  The runtime's `Handler` being in `vendor/`, every Invocation of an application then fails.
+- Nothing tells a failed deployment from a successful one: the status, `error_message`, `build_message` and `runtime_message` (empty) are the same, and Composer's output reaches neither Cockpit (no entry under the function's `resource_id`, nor anywhere in the project's logs) nor any `scw function` command.
+- The new instance logs `Function is not ready to serve requests yet...` and `Function is now ready to serve requests!` as usual, and the previous one `Forked function has terminated` about 40 seconds later.
+
 ## HTTP Event
 
 Keys: `resource`, `path`, `httpMethod`, `headers`, `multiValueHeaders` (null), `queryStringParameters`, `multiValueQueryStringParameters` (null), `pathParameters` (null), `stageVariables`, `requestContext` (with `httpMethod`), `body`, `isBase64Encoded`.
@@ -152,7 +171,3 @@ Measured with the Loki HTTP API of the project's `Scaleway Logs` data source (`s
 ## Terraform
 
 - Replacing a function (for example changing `runtime`) deletes its CRON triggers server side; Terraform recreates them only on the next apply.
-
-## Not measured
-
-- Whether a deployment with a failing Composer script serves the new code or keeps the previous version.

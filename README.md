@@ -523,16 +523,19 @@ Headers whose name holds an underscore (`X_Real_Ip`) are dropped, as nginx and A
 
 Scaleway runs `composer install --no-dev` in the function's directory when the zip holds a `composer.json` at its root, replacing any shipped `vendor/`.
 Every locked package must therefore be downloadable from Scaleway, and the function's environment variables are not available to Composer scripts.
-A failing install or script does not fail the deployment: the function becomes `ready` anyway, so check its first Invocations after a deploy.
+A failing install or script does not fail the deployment, and Scaleway serves the new code anyway, never the previous version ([measured](docs/probe-results.md#failed-scripts-and-installs)):
+
+- a failing script runs once `vendor/` and its autoloader are complete, so the new code works, without what the script should have done (a warmed cache, generated files...);
+- a failing install leaves no `vendor/` at all: every Invocation answers a `500`, and logs `Failed to open stream` for `vendor/autoload.php` on stdout.
+
+Neither shows anywhere: the function is `ready`, its `error_message` and `build_message` stay empty, and Composer's output reaches neither Cockpit nor `scw`.
+So after each deploy, call the function and check its [logs](#logs).
+Keep deploy-time scripts to what the application can do without, as a cache warmup the first Invocation redoes, and run whatever it needs at runtime instead.
 
 ### Windows
 
 `scaleway-serve` relies on Unix sockets: it runs on macOS and Linux, not on Windows outside WSL, and `scaleway-package` is only tested on macOS and Linux.
 Without the `pcntl` extension, stopping the Emulator with `kill` may leave its PHP processes running.
-
-### Not measured
-
-The [probe](probe) settled every platform fact the runtime relies on ([results](docs/probe-results.md)), except whether a deployment whose Composer install or script fails serves the new code or keeps the previous version.
 
 ## Contributing
 
