@@ -68,7 +68,7 @@ Each request also sent `X-Forwarded-Host: spoofed.example`, `Forwarded: host=spo
 | The function's `domain_name`, after a first apply | `https://<domain_name>/hello?name=url`, `https://<domain_name>/urls?a=1`, `https://<domain_name>` | `302`, `Location: https://<domain_name>/hello?name=redirect`, which `curl -L` follows to `{"message":"Hello redirect!"}` |
 | `api.example.com`, standing for a custom domain | `https://api.example.com/hello?name=url`, `https://api.example.com/urls?a=1`, `https://api.example.com` | `302`, `Location: https://api.example.com/hello?name=redirect` |
 
-Changing `host` is an in-place update of the function; the new value served within a minute or so.
+Changing `host` is an in-place update of the function, whose new value is served once the apply returns.
 With `framework.trusted_hosts: ['^api\.example\.com$']`, `host` set to `api.example.com` answered `200`, and `host` unset answered every Request with a `400`, forged `X-Forwarded-Host: api.example.com` and `Forwarded: host=api.example.com` not helping, and a `Host: api.example.com` routing to the platform's `404`.
 
 ## CRON Event
