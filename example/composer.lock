@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "86fdec512442a38f766c855ef64b0bc1",
+    "content-hash": "21b3b8429cebd5729128c875480d674e",
     "packages": [
         {
             "name": "jdecool/scaleway-runtime",
@@ -12,7 +12,7 @@
             "dist": {
                 "type": "path",
                 "url": "..",
-                "reference": "74ba5e04d1f150a20d38a91c1bfe52163847656f"
+                "reference": "be2173fff3fe2d01845c6b5283000c20f1836204"
             },
             "require": {
                 "php": ">=8.4",
