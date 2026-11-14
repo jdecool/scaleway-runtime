@@ -56,6 +56,11 @@ final class HttpConverter
         $contentType = '';
         $contentTypeHeader = '';
         foreach (self::stringMap($event['headers'] ?? null) as $name => $value) {
+            // "X_Real_Ip" would land on the same key as the platform's X-Real-Ip, and may come after it:
+            // dropped, as nginx and Apache drop such names for CGI.
+            if (str_contains($name, '_')) {
+                continue;
+            }
             $key = strtoupper(str_replace('-', '_', $name));
             // PHP exposes these two without the HTTP_ prefix, and HeaderBag expects them that way.
             $server[\in_array($key, ['CONTENT_TYPE', 'CONTENT_LENGTH'], true) ? $key : 'HTTP_'.$key] = $value;

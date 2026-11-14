@@ -311,6 +311,19 @@ final class HttpConverterTest extends TestCase
         self::assertSame([], Request::getTrustedProxies());
     }
 
+    public function testHeadersWithUnderscoresCannotShadowThePlatformOnes(): void
+    {
+        $request = HttpConverter::toRequest(['headers' => [
+            'X-Forwarded-Proto' => 'https',
+            'X-Real-Ip' => '2001:db8::1',
+            'X_forwarded_proto' => 'http',
+            'X_real_ip' => '203.0.113.66',
+        ]]);
+
+        self::assertSame('2001:db8::1', $request->getClientIp());
+        self::assertTrue($request->isSecure());
+    }
+
     public function testTrustedProxiesConfiguredByTheAppStillApply(): void
     {
         Request::setTrustedProxies(['2001:db8::1'], Request::HEADER_X_FORWARDED_HOST);

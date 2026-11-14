@@ -16,3 +16,4 @@ The forgeable headers still reach the Application as plain headers, and trusted 
 - Absolute URLs (router, redirects to absolute URLs, signed URLs) are only correct once `host` is set; Terraform cannot pass a function its own `domain_name` (the reference would be a cycle), so set it from a custom domain or after a first deploy.
 - `X-Real-Ip` and `X-Forwarded-Proto` are undocumented platform behaviour, measured once; a change of the platform would need a new probe.
 - An application configuring `framework.trusted_proxies` against `REMOTE_ADDR` or private ranges trusts forgeable headers again.
+- Headers whose name holds an underscore are dropped, as nginx and Apache do: `X_Real_Ip` would otherwise land on the same `$_SERVER` key as the platform's `X-Real-Ip`, and could win over it.
