@@ -93,6 +93,47 @@ final class CommandInvocationTest extends TestCase
         self::assertStringNotContainsString('guess', $this->errorLog());
     }
 
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function httpOnlyHeaders(): iterable
+    {
+        yield 'X-Real-Ip' => ['X-Real-Ip'];
+        yield 'X-Envoy-External-Address' => ['X-Envoy-External-Address'];
+        yield 'lowercase' => ['x-real-ip'];
+    }
+
+    #[DataProvider('httpOnlyHeaders')]
+    public function testHttpCallCarryingTheSecretIsNotACommandInvocation(string $header): void
+    {
+        $event = ['httpMethod' => 'POST', 'path' => '/', 'headers' => [$header => '2001:db8::1'], 'body' => '{"command":"app:sync","secret":"s3cret"}'];
+
+        self::assertNull(CommandInvocation::fromEvent($event, $this->errorLog));
+        self::assertStringContainsString('the Event comes from an HTTP call', $this->errorLog());
+        self::assertStringNotContainsString('s3cret', $this->errorLog());
+    }
+
+    public function testRealCronEventIsACommandInvocation(): void
+    {
+        $event = [
+            'path' => '/',
+            'httpMethod' => 'POST',
+            'headers' => [
+                'Content-Type' => 'application/json',
+                'Forwarded' => 'for=100.96.2.180;proto=http',
+                'K-Proxy-Request' => 'activator',
+                'User-Agent' => 'Go-http-client/1.1',
+                'X-Forwarded-For' => '100.96.2.180, 100.96.36.219',
+                'X-Forwarded-Proto' => 'http',
+                'X-Request-Id' => '0b8e4a52-7c1d-4e0f-8a3b-5d6c7e8f9a01',
+            ],
+            'queryStringParameters' => [],
+            'body' => '{"command":"app:sync","args":{"--force":true},"secret":"s3cret"}',
+        ];
+
+        self::assertSame(['--force' => true], CommandInvocation::fromEvent($event, $this->errorLog)?->args);
+    }
+
     public function testArgsMustNameTheirParameters(): void
     {
         $this->expectException(\UnexpectedValueException::class);
