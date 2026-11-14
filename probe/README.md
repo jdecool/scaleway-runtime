@@ -60,7 +60,7 @@ done > 06-body-sizes.txt
 # 7. Output and failures: where does stdout go, what does an exception produce?
 curl -sS -i "$PROBE_URL/?mode=stdout" > 07-stdout.txt
 curl -sS -i "$PROBE_URL/?mode=exception" > 07-exception.txt
-# A multi-line exception and a long line (bytes, 65536 by default) written to stderr: how are they split in the logs?
+# A multi-line exception and a long line (bytes, 65536 by default, at most 1 MiB) written to stderr: how are they split in the logs?
 curl -sS -i "$PROBE_URL/?mode=stderr&bytes=65536" > 07-stderr.txt
 
 # 8. Other methods and HEAD.
