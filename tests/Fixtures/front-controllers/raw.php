@@ -22,6 +22,8 @@ return static function (): Closure {
             '/invalid' => ['statusCode' => '200', 'headers' => [], 'body' => 'not an int status'],
             '/bad-header' => ['statusCode' => 200, 'headers' => ['X-Bad' => ['a' => 'b']], 'body' => ''],
             '/string' => 'plain body',
+            '/null-base64' => ['statusCode' => 200, 'body' => '', 'isBase64Encoded' => null],
+            '/minimal' => ['statusCode' => 200, 'body' => 'no headers'],
             default => [
                 'statusCode' => 202,
                 'headers' => ['Content-Type' => 'application/json', 'X-Multi' => ['a', 'b']],

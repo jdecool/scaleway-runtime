@@ -12,7 +12,7 @@ use Symfony\Component\HttpFoundation\Response;
 /**
  * Converts an Event into a Symfony Request, and a Symfony Response into a Function Response.
  *
- * @phpstan-type FunctionResponse array{statusCode: int, headers: array<string, string|list<string>>, body: string, isBase64Encoded?: bool}
+ * @phpstan-type FunctionResponse array{statusCode: int, headers?: array<string, string|list<string>>, body: string, isBase64Encoded?: bool}
  */
 final class HttpConverter
 {
@@ -144,7 +144,7 @@ final class HttpConverter
     }
 
     /**
-     * @return FunctionResponse
+     * @return array{statusCode: int, headers: array<string, string|list<string>>, body: string, isBase64Encoded?: true}
      */
     public static function toFunctionResponse(Response $response): array
     {

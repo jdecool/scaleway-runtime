@@ -267,12 +267,19 @@ final class HandlerTest extends TestCase
         $second = $handler->invoke(['path' => '/again'], null);
 
         self::assertSame(202, $first['statusCode']);
-        self::assertSame(['Content-Type' => 'application/json', 'X-Multi' => ['a', 'b']], $first['headers']);
+        self::assertSame(['Content-Type' => 'application/json', 'X-Multi' => ['a', 'b']], $first['headers'] ?? null);
         self::assertFalse($first['isBase64Encoded'] ?? null);
         self::assertArrayNotHasKey('multiValueHeaders', $first, 'Keys Scaleway does not document must be dropped.');
         self::assertSame(['calls' => 1, 'event' => $event, 'context' => ['memoryLimitInMb' => 128]], $this->decode($first));
         self::assertSame(['calls' => 2, 'event' => ['path' => '/again'], 'context' => null], $this->decode($second));
         self::assertSame(1, RecordingKernel::$builds);
+    }
+
+    public function testRawCallableMayOmitHeadersAsInScalewaysMinimalExample(): void
+    {
+        $response = $this->handler(['front_controller' => 'front-controllers/raw.php'])->invoke(['path' => '/minimal'], []);
+
+        self::assertSame(['statusCode' => 200, 'body' => 'no headers'], $response);
     }
 
     public function testRawCallableGetsCommandInvocationsAsPlainEvents(): void
@@ -304,6 +311,7 @@ final class HandlerTest extends TestCase
         yield 'non-int status' => ['/invalid', 'must return a Function Response'];
         yield 'nested header value' => ['/bad-header', 'must return a Function Response'];
         yield 'plain string' => ['/string', '"string" returned'];
+        yield 'null base64 flag' => ['/null-base64', 'must return a Function Response'];
     }
 
     #[DataProvider('failingRawCallables')]

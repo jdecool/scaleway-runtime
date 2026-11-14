@@ -24,20 +24,25 @@ final readonly class CallableRunner implements InvocationRunner
     {
         $response = ($this->callable)($event, $context);
 
-        // Scaleway only documents this shape for PHP, and what it makes of anything else is unknown: keys it does
-        // not document are dropped rather than passed along.
+        // Scaleway only documents this shape for PHP, its minimal example without headers, and what it makes of
+        // anything else is unknown: keys it does not document are dropped rather than passed along.
         $fields = \is_array($response) ? $response : [];
         $statusCode = $fields['statusCode'] ?? null;
-        $headers = $fields['headers'] ?? null;
         $body = $fields['body'] ?? null;
-        $base64 = $fields['isBase64Encoded'] ?? false;
-        if (!\is_int($statusCode) || !self::isHeaders($headers) || !\is_string($body) || !\is_bool($base64)) {
-            throw new \UnexpectedValueException(\sprintf('A raw callable must return a Function Response: an array with an int "statusCode", "headers" mapping names to a string or a list of strings, a string "body" and an optional bool "isBase64Encoded"; "%s" returned.', get_debug_type($response)));
+        if (!\is_int($statusCode) || !\is_string($body)
+            || \array_key_exists('headers', $fields) && !self::isHeaders($fields['headers'])
+            || \array_key_exists('isBase64Encoded', $fields) && !\is_bool($fields['isBase64Encoded'])
+        ) {
+            throw new \UnexpectedValueException(\sprintf('A raw callable must return a Function Response: an array with an int "statusCode", optional "headers" mapping names to a string or a list of strings, a string "body" and an optional bool "isBase64Encoded"; "%s" returned.', get_debug_type($response)));
         }
 
-        $functionResponse = ['statusCode' => $statusCode, 'headers' => $headers, 'body' => $body];
+        $functionResponse = ['statusCode' => $statusCode, 'body' => $body];
+        // Absent keys stay absent, as defaulting them would make up what the platform does without them.
+        if (\array_key_exists('headers', $fields)) {
+            $functionResponse['headers'] = $fields['headers'];
+        }
         if (\array_key_exists('isBase64Encoded', $fields)) {
-            $functionResponse['isBase64Encoded'] = $base64;
+            $functionResponse['isBase64Encoded'] = $fields['isBase64Encoded'];
         }
 
         return $functionResponse;
