@@ -57,6 +57,20 @@ Headers sent by the client:
 | `X-Real-Ip`, `X-Envoy-External-Address`, `X-Request-Id`, `K-Proxy-Request` | Overwritten by the platform |
 | `Host` | Not forwarded to the function (an unknown host routes to a 404) |
 
+## Absolute URLs
+
+Measured on 2026-11-14 with the example deployed on `php85` (runtime `2bca487`, whose host handling is the current one), its `GET /urls` answering the router's `ABSOLUTE_URL`, `getUri()` and `getSchemeAndHttpHost()`, and its `GET /redirect` a `RedirectResponse` to an absolute route URL.
+Each request also sent `X-Forwarded-Host: spoofed.example`, `Forwarded: host=spoofed.example` and `X-Forwarded-Port: 8443`, which never showed in any URL.
+
+| `host` (`SCALEWAY_HOST`) | `GET /urls?a=1` | `GET /redirect` |
+| --- | --- | --- |
+| Unset | `https://localhost/hello?name=url`, `https://localhost/urls?a=1`, `https://localhost` | `302`, `Location: https://localhost/hello?name=redirect` |
+| The function's `domain_name`, after a first apply | `https://<domain_name>/hello?name=url`, `https://<domain_name>/urls?a=1`, `https://<domain_name>` | `302`, `Location: https://<domain_name>/hello?name=redirect`, which `curl -L` follows to `{"message":"Hello redirect!"}` |
+| `api.example.com`, standing for a custom domain | `https://api.example.com/hello?name=url`, `https://api.example.com/urls?a=1`, `https://api.example.com` | `302`, `Location: https://api.example.com/hello?name=redirect` |
+
+Changing `host` is an in-place update of the function; the new value served within a minute or so.
+With `framework.trusted_hosts: ['^api\.example\.com$']`, `host` set to `api.example.com` answered `200`, and `host` unset answered every Request with a `400`, forged `X-Forwarded-Host: api.example.com` and `Forwarded: host=api.example.com` not helping, and a `Host: api.example.com` routing to the platform's `404`.
+
 ## CRON Event
 
 ```json

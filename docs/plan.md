@@ -56,6 +56,7 @@ Done on 2026-11-14: the repository is on GitHub with CI green, the package is on
 Command Invocations were then verified on that deployment through its logs ([probe results](probe-results.md#cron-invocations)): a CRON trigger lands on `POST /`, the `app:greet` arguments with the secret run the command, a wrong secret or an HTTP call do not, and a failing command is logged.
 For that, the example logs from the `info` level to stderr, and no longer logs the body of `POST /`, which may hold the secret; `e2e/run.sh` still skips the CRON scenarios against a deployment, the triggers firing hourly and their outcome being in Cockpit only, so the example README documents the manual check.
 
-1. Run the example deployment with `host` set, to check absolute URLs.
-2. Measure what the probe left open: what a deployment with a failing Composer script serves.
+Absolute URLs were then verified on that deployment, without `host`, with its `domain_name` and with a custom-domain-like value ([probe results](probe-results.md#absolute-urls)): the router, `getUri()` and redirects carry the `host`, never a forged `X-Forwarded-Host`, and `framework.trusted_hosts` answers a 400 until `host` matches it.
+
+1. Measure what the probe left open: what a deployment with a failing Composer script serves.
    Where logs go was measured on 2026-11-14 ([probe results](probe-results.md#logs)): the runtime's stderr lines reach Cockpit one entry per line, with a `DEBUG - ` prefix and a ` source=user stream=stderr` suffix.

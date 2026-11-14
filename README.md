@@ -125,6 +125,7 @@ Absolute URLs (`UrlGeneratorInterface::ABSOLUTE_URL`, signed URLs, redirects bui
 Set it to the function's domain (its `domain_name` on Scaleway) or to its custom domain.
 With Terraform, a function cannot reference its own `domain_name` in its variables (the reference would be a cycle): use a custom domain, or set the variable after a first apply.
 An application configuring `framework.trusted_hosts` answers every Request with a 400 until the host is set to one of its trusted hosts.
+Both were [measured on Scaleway](docs/probe-results.md#absolute-urls), forged `X-Forwarded-Host` and `Forwarded` headers never changing the host.
 
 ### Cache and writable directories
 

@@ -10,6 +10,8 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 | `GET /binary` | A binary response (bytes 0 to 255) |
 | `GET /stream` | A streamed response, buffered into one Function Response |
 | `GET /counter` | A per-process invocation counter: it keeps growing while a Warm Process serves the Invocations |
+| `GET /urls` | The absolute URLs the application builds: from the router, `getUri()` and `getSchemeAndHttpHost()` |
+| `GET /redirect` | A redirect to an absolute route URL |
 | `POST /` | Where CRON Invocations land, with the trigger's arguments as JSON body |
 
 Its `post-install-cmd` warms the prod cache when Scaleway installs the dependencies at deploy time, as the warmup needs no secret; without it, the first Invocation of each Warm Process builds the cache.
@@ -74,13 +76,17 @@ cd example
 vendor/bin/scaleway-package
 export SCW_ACCESS_KEY=... SCW_SECRET_KEY=... SCW_DEFAULT_PROJECT_ID=...
 terraform -chdir=terraform init
-export SCALEWAY_CRON_SECRET=$(openssl rand -hex 32)
-terraform -chdir=terraform apply -var app_secret="$(openssl rand -hex 16)" -var cron_secret="$SCALEWAY_CRON_SECRET"
-e2e/run.sh "$(terraform -chdir=terraform output -raw endpoint)"
+export TF_VAR_app_secret=$(openssl rand -hex 16) SCALEWAY_CRON_SECRET=$(openssl rand -hex 32)
+export TF_VAR_cron_secret=$SCALEWAY_CRON_SECRET
+terraform -chdir=terraform apply
+endpoint=$(terraform -chdir=terraform output -raw endpoint)
+terraform -chdir=terraform apply -var host="${endpoint#https://}"
+SCALEWAY_HOST=${endpoint#https://} e2e/run.sh "$endpoint"
 terraform -chdir=terraform destroy
 ```
 
-Rerun `scaleway-package` and `terraform apply` to deploy a new version.
+Rerun `scaleway-package` and `terraform apply` (with the same `host`) to deploy a new version.
+`e2e/run.sh` checks that absolute URLs carry `SCALEWAY_HOST`, `localhost` when it is unset, as for a deployment without `host`.
 Against a deployment, `e2e/run.sh` skips the CRON scenarios, as only the platform triggers CRON Invocations.
 Check them in the [logs](../README.md#logs) instead, after the triggers ran (at minutes 0 and 30): each one leaves its line, the second showing that `app:greet` ran as a Command Invocation.
 
