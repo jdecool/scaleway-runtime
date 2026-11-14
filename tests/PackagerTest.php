@@ -174,12 +174,21 @@ final class PackagerTest extends TestCase
             'COMPOSER_DISABLE_NETWORK' => '1',
             'COMPOSER_NO_AUDIT' => '1',
         ];
-        $process = proc_open([\PHP_BINARY, '-d', 'sys_temp_dir='.$this->dir.'/tmp', '-r', $code], [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env + getenv());
+        $process = proc_open([\PHP_BINARY, '-d', 'sys_temp_dir='.$this->dir.'/tmp', '-r', $code], [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env + $this->inheritedEnv());
         \assert(false !== $process);
         $log = (string) stream_get_contents($pipes[2]);
         fclose($pipes[2]);
 
         return [proc_close($process), $log];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function inheritedEnv(): array
+    {
+        // Hermetic: a COMPOSER, COMPOSER_VENDOR_DIR... of the developer's shell would point the install elsewhere.
+        return array_filter(getenv(), static fn (string $name): bool => !str_starts_with($name, 'COMPOSER'), \ARRAY_FILTER_USE_KEY);
     }
 
     /**
