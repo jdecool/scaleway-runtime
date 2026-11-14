@@ -15,6 +15,51 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class HttpConverterTest extends TestCase
 {
+    /** An HTTP Event as measured on Scaleway (docs/probe-results.md), GET without a body. */
+    private const array PLATFORM_EVENT = [
+        'resource' => '/some/path',
+        'path' => '/some/path',
+        'httpMethod' => 'GET',
+        'headers' => [
+            'Accept' => '*/*',
+            'Forwarded' => 'for="[2001:db8::1]";proto=https, for=100.96.1.187',
+            'K-Proxy-Request' => 'activator',
+            'User-Agent' => 'curl/8.7.1',
+            'X-Custom' => 'hello',
+            'X-Envoy-External-Address' => '2001:db8::1',
+            'X-Forwarded-For' => '2001:db8::1, 100.96.1.187, 100.96.38.33',
+            'X-Forwarded-Proto' => 'https',
+            'X-Real-Ip' => '2001:db8::1',
+            'X-Request-Id' => '6f1c1e0a-3b4e-4f7a-9a52-0d1f3e6c2b11',
+        ],
+        'multiValueHeaders' => null,
+        'queryStringParameters' => ['single' => '1', 'repeated' => 'b', 'list[]' => 'y'],
+        'multiValueQueryStringParameters' => null,
+        'pathParameters' => null,
+        'stageVariables' => [],
+        'requestContext' => ['httpMethod' => 'GET'],
+        'body' => '',
+        'isBase64Encoded' => true,
+    ];
+
+    /** A CRON Event as measured on Scaleway (docs/probe-results.md). */
+    private const array CRON_EVENT = [
+        'path' => '/',
+        'httpMethod' => 'POST',
+        'headers' => [
+            'Content-Length' => '40',
+            'Content-Type' => 'application/json',
+            'Forwarded' => 'for=100.96.2.180;proto=http',
+            'K-Proxy-Request' => 'activator',
+            'User-Agent' => 'Go-http-client/1.1',
+            'X-Forwarded-For' => '100.96.2.180, 100.96.36.219',
+            'X-Forwarded-Proto' => 'http',
+            'X-Request-Id' => '0b8e4a52-7c1d-4e0f-8a3b-5d6c7e8f9a01',
+        ],
+        'queryStringParameters' => [],
+        'body' => '{"probe":"cron","nested":{"list":[1,2]}}',
+    ];
+
     protected function tearDown(): void
     {
         Request::setTrustedProxies([], 0);
@@ -26,10 +71,10 @@ final class HttpConverterTest extends TestCase
             'path' => '/blog/post',
             'method' => 'put',
             'queryStringParameters' => ['page' => '2', 'q' => 'a b&c'],
-            'headers' => ['Content-Type' => 'application/json', 'Content-Length' => '13', 'X-Custom-Header' => 'yes', 'Host' => 'example.com'],
+            'headers' => ['Content-Type' => 'application/json', 'Content-Length' => '13', 'X-Custom-Header' => 'yes'],
             'body' => '{"ok": true}',
             'isBase64Encoded' => false,
-        ]);
+        ], 'example.com');
 
         self::assertSame('PUT', $request->getMethod());
         self::assertSame('/blog/post', $request->getPathInfo());
@@ -238,42 +283,79 @@ final class HttpConverterTest extends TestCase
         self::assertSame('text/html, application/json', $request->headers->get('Accept'));
     }
 
-    public function testForwardedHeadersApplyOnceTheProxyIsTrusted(): void
+    public function testClientAndSchemeComeFromTheHeadersThePlatformOverwrites(): void
     {
-        Request::setTrustedProxies([HttpConverter::PROXY_ADDRESS], HttpConverter::TRUSTED_HEADERS);
+        $request = HttpConverter::toRequest(self::PLATFORM_EVENT);
 
-        $request = HttpConverter::toRequest([
-            'path' => '/',
-            'headers' => [
-                'Host' => 'internal.local',
-                'X-Forwarded-For' => '203.0.113.7',
-                'X-Forwarded-Host' => 'app.example.com',
-                'X-Forwarded-Proto' => 'https',
-                'X-Forwarded-Port' => '443',
-            ],
-        ]);
-
+        self::assertSame('2001:db8::1', $request->getClientIp());
         self::assertTrue($request->isSecure());
+        self::assertSame(443, $request->getPort());
+        self::assertSame('https://localhost/some/path?list%5B0%5D=y&repeated=b&single=1', $request->getUri());
+    }
+
+    public function testClientForgeableForwardingHeadersAreIgnored(): void
+    {
+        $request = HttpConverter::toRequest(['headers' => [
+            'X-Real-Ip' => '2001:db8::1',
+            'X-Forwarded-For' => '203.0.113.66,2001:db8::1, 100.96.2.180',
+            'X-Forwarded-Host' => 'spoofed.example',
+            'X-Forwarded-Port' => '1234',
+            'Forwarded' => 'for=203.0.113.66;host=spoofed.example',
+            'Host' => 'spoofed.example',
+            'X-Forwarded-Proto' => 'http',
+        ]], 'app.example.com');
+
+        self::assertSame('2001:db8::1', $request->getClientIp());
+        self::assertSame('http://app.example.com/', $request->getUri());
+        self::assertSame(80, $request->getPort());
+        self::assertSame([], Request::getTrustedProxies());
+    }
+
+    public function testTrustedProxiesConfiguredByTheAppStillApply(): void
+    {
+        Request::setTrustedProxies(['2001:db8::1'], Request::HEADER_X_FORWARDED_HOST);
+
+        $request = HttpConverter::toRequest(['headers' => ['X-Real-Ip' => '2001:db8::1', 'X-Forwarded-Host' => 'app.example.com']]);
+
         self::assertSame('app.example.com', $request->getHost());
-        self::assertSame('https://app.example.com/', $request->getUri());
-        self::assertSame('203.0.113.7', $request->getClientIp());
     }
 
-    public function testForwardedHeadersAreIgnoredWhileTheProxyIsUntrusted(): void
+    public function testCronEventComesFromThePlatformOverHttp(): void
     {
-        $request = HttpConverter::toRequest(['headers' => ['Host' => 'internal.local', 'X-Forwarded-Proto' => 'https']]);
+        $request = HttpConverter::toRequest(self::CRON_EVENT);
 
+        self::assertSame('POST', $request->getMethod());
+        self::assertSame(HttpConverter::PROXY_ADDRESS, $request->getClientIp());
         self::assertFalse($request->isSecure());
-        self::assertSame('internal.local', $request->getHost());
+        self::assertSame('http://localhost/', $request->getUri());
+        self::assertSame(['probe' => 'cron', 'nested' => ['list' => [1, 2]]], $request->toArray());
     }
 
-    public function testEventWithoutHostGetsTheDefaultHostOfRequestCreate(): void
+    public function testMalformedRealIpFallsBackToTheProxyAddress(): void
     {
-        $request = HttpConverter::toRequest(['path' => '/jobs', 'method' => 'POST']);
+        self::assertSame(HttpConverter::PROXY_ADDRESS, HttpConverter::toRequest(['headers' => ['X-Real-Ip' => 'not an ip']])->getClientIp());
+    }
+
+    public function testEmptyHostOptionGetsTheDefaultHostOfRequestCreate(): void
+    {
+        $request = HttpConverter::toRequest(['path' => '/jobs', 'httpMethod' => 'POST'], '');
 
         self::assertSame('http://localhost/jobs', $request->getUri());
         self::assertSame(80, $request->getPort());
-        self::assertSame('http://localhost/jobs', HttpConverter::toRequest(['path' => '/jobs', 'headers' => ['Host' => '']])->getUri());
+    }
+
+    public function testRealEventShapes(): void
+    {
+        // Text bodies come without isBase64Encoded, and an Event without query string has an empty list.
+        $text = HttpConverter::toRequest(['httpMethod' => 'POST', 'headers' => ['Content-Type' => 'application/json'], 'queryStringParameters' => [], 'body' => '{"a":"é"}']
+            + array_diff_key(self::PLATFORM_EVENT, ['isBase64Encoded' => true]));
+        self::assertSame('{"a":"é"}', $text->getContent());
+        self::assertSame([], $text->query->all());
+
+        $emptyGet = HttpConverter::toRequest(self::PLATFORM_EVENT);
+        self::assertSame('', $emptyGet->getContent());
+        self::assertSame(['single' => '1', 'repeated' => 'b', 'list' => ['y']], $emptyGet->query->all());
+        self::assertSame('hello', $emptyGet->headers->get('X-Custom'));
     }
 
     public function testFunctionResponseFromTextResponse(): void

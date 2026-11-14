@@ -50,6 +50,5 @@ final class EmulatorTest extends TestCase
 
         self::assertSame('/search', $request->getPathInfo());
         self::assertSame(['q' => 'café', 'page' => ['size' => '10']], $request->query->all());
-        self::assertSame('example.test', $request->getHost());
     }
 }

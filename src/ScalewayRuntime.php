@@ -24,7 +24,9 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  * Runs Symfony Applications on Scaleway Serverless Functions.
  *
  * On top of the options managed by SymfonyRuntime, it accepts:
- *  - "front_controller": the Front Controller path, relative to "project_dir"; defaults to "public/index.php".
+ *  - "front_controller": the Front Controller path, relative to "project_dir"; defaults to "public/index.php";
+ *  - "host": the public host of the function, as no Host header reaches it; defaults to the SCALEWAY_HOST
+ *    environment variable, then to "localhost".
  *
  * Unlike SymfonyRuntime, it defaults the env to prod when the process environment sets none, whatever .env files say.
  *
@@ -44,11 +46,13 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  */
 class ScalewayRuntime extends SymfonyRuntime
 {
+    public const string HOST_VAR = 'SCALEWAY_HOST';
+
     /** The Request of the Invocation the Front Controller closure is being called for. */
     private ?Request $request = null;
 
     /**
-     * @param array<mixed> $options see SymfonyRuntime, plus "front_controller"
+     * @param array<mixed> $options see SymfonyRuntime, plus "front_controller" and "host"
      */
     public function __construct(array $options = [])
     {
@@ -62,6 +66,9 @@ class ScalewayRuntime extends SymfonyRuntime
         // Invocations are web requests served by a long-lived process, as in FrankenPHP's worker mode; in a CLI SAPI,
         // FrameworkBundle would otherwise render error pages with its CLI renderer, which dumps the exception even in prod.
         $_SERVER['APP_RUNTIME_MODE'] ??= 'web=1&worker=1';
+
+        // Read after Dotenv ran, so .env files may set it like any other variable.
+        $this->options['host'] ??= ($_SERVER[self::HOST_VAR] ?? null) ?: ($_ENV[self::HOST_VAR] ?? null) ?: getenv(self::HOST_VAR) ?: 'localhost';
 
         $projectDir = $this->options['project_dir'] ?? null;
         if (\is_string($projectDir) && !is_writable(is_dir($projectDir.'/var') ? $projectDir.'/var' : $projectDir)) {
@@ -168,7 +175,14 @@ class ScalewayRuntime extends SymfonyRuntime
             }
 
             return new FrameworkApplication($kernel);
-        }, new HttpKernelRunner($kernel, $errorLog), $errorLog);
+        }, new HttpKernelRunner($kernel, $errorLog, $this->host()), $errorLog);
+    }
+
+    private function host(): string
+    {
+        $host = $this->options['host'] ?? null;
+
+        return \is_string($host) ? $host : throw new \LogicException('The "host" runtime option must be a string.');
     }
 
     protected function getArgument(\ReflectionParameter $parameter, ?string $type): mixed

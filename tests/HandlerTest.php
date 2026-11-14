@@ -118,11 +118,28 @@ final class HandlerTest extends TestCase
     {
         $handler = $this->handler(['front_controller' => 'front-controllers/request-response.php']);
 
-        $first = $handler->invoke(['queryStringParameters' => ['name' => 'Ada'], 'headers' => ['X-Forwarded-For' => '203.0.113.7']], []);
+        $first = $handler->invoke(['queryStringParameters' => ['name' => 'Ada'], 'headers' => ['X-Real-Ip' => '203.0.113.7']], []);
         $second = $handler->invoke(['queryStringParameters' => ['name' => 'Grace']], []);
 
         self::assertSame('Hello Ada from 203.0.113.7', $first['body']);
         self::assertSame('Hello Grace from 127.0.0.1', $second['body']);
+    }
+
+    public function testHostOptionIsTheHostOfEveryRequest(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php', 'host' => 'app.example.com']);
+        $handler->invoke(['path' => '/', 'headers' => ['X-Forwarded-Proto' => 'https', 'Host' => 'spoofed.example']], []);
+
+        self::assertSame('https://app.example.com/', RecordingKernel::$last?->lastRequest?->getUri());
+    }
+
+    public function testHostDefaultsToTheScalewayHostVariable(): void
+    {
+        $_SERVER['SCALEWAY_HOST'] = 'fn.example.com';
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php']);
+        $handler->invoke(['path' => '/'], []);
+
+        self::assertSame('fn.example.com', RecordingKernel::$last?->lastRequest?->getHost());
     }
 
     public function testResponseFrontControllerReturningSomethingElseFailsTheInvocation(): void

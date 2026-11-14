@@ -17,22 +17,20 @@ use Symfony\Component\HttpFoundation\Response;
 final class HttpConverter
 {
     /**
-     * The address the Request sees as its peer: Scaleway always fronts the function,
-     * so the peer is the platform proxy and the client comes from X-Forwarded-For.
+     * The client address of Events without X-Real-Ip, which only CRON Invocations lack: they come from the platform itself.
      */
     public const string PROXY_ADDRESS = '127.0.0.1';
 
-    public const int TRUSTED_HEADERS = Request::HEADER_X_FORWARDED_FOR
-        | Request::HEADER_X_FORWARDED_HOST
-        | Request::HEADER_X_FORWARDED_PORT
-        | Request::HEADER_X_FORWARDED_PROTO;
-
     /**
+     * The client, scheme and host come only from what the platform sets itself, as clients can forge the other
+     * forwarding headers: no proxy is trusted (see docs/adr/0007-trust-only-headers-the-platform-overwrites.md).
+     *
      * @param array<mixed> $event
+     * @param string       $host  the public host of the function, as no Host header reaches it
      */
-    public static function toRequest(array $event): Request
+    public static function toRequest(array $event, string $host = 'localhost'): Request
     {
-        $method = strtoupper(self::string($event['method'] ?? $event['httpMethod'] ?? null) ?? 'GET');
+        $method = strtoupper(self::string($event['httpMethod'] ?? $event['method'] ?? null) ?? 'GET');
         $path = '/'.ltrim(self::string($event['path'] ?? null) ?? '', '/');
         // An explicit separator, as arg_separator.output may be "&amp;".
         $queryString = http_build_query(self::stringMap($event['queryStringParameters'] ?? null), '', '&');
@@ -51,7 +49,6 @@ final class HttpConverter
             'REQUEST_URI' => '' === $queryString ? $path : $path.'?'.$queryString,
             'QUERY_STRING' => $queryString,
             'SERVER_PROTOCOL' => 'HTTP/1.1',
-            'REMOTE_ADDR' => self::PROXY_ADDRESS,
             'REQUEST_TIME' => time(),
             'REQUEST_TIME_FLOAT' => microtime(true),
         ];
@@ -69,11 +66,14 @@ final class HttpConverter
                 $contentType = strtolower($value);
             }
         }
-        // Events need not carry a Host (CRON ones may not), and without one the Request's URI would be "http://:/";
-        // Request::create() falls back to the same default.
-        if ('' === ($server['HTTP_HOST'] ?? '')) {
-            $server['HTTP_HOST'] = 'localhost';
-        }
+        // The platform overwrites X-Real-Ip and X-Forwarded-Proto on every HTTP call, whatever the client sends.
+        $server['REMOTE_ADDR'] = filter_var($server['HTTP_X_REAL_IP'] ?? '', \FILTER_VALIDATE_IP) ?: self::PROXY_ADDRESS;
+        $proto = $server['HTTP_X_FORWARDED_PROTO'] ?? null;
+        $secure = \is_string($proto) && 'https' === strtolower($proto);
+        $server['HTTPS'] = $secure ? 'on' : 'off';
+        $server['SERVER_PORT'] = $secure ? 443 : 80;
+        // The platform drops the client's Host, and an Event carrying one cannot come from it.
+        $server['HTTP_HOST'] = '' === $host ? 'localhost' : $host;
 
         // PHP only parses form bodies into $_POST for POST; Symfony's createFromGlobals() covers the other body methods.
         $post = $files = [];

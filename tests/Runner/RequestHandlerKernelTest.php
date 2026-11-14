@@ -21,7 +21,7 @@ final class RequestHandlerKernelTest extends TestCase
         $errorLog = fopen('php://memory', 'w+');
         self::assertNotFalse($errorLog);
         $this->handler = new EchoRequestHandler();
-        $this->runner = new HttpKernelRunner(new RequestHandlerKernel($this->handler), $errorLog);
+        $this->runner = new HttpKernelRunner(new RequestHandlerKernel($this->handler), $errorLog, 'api.example.com');
     }
 
     protected function tearDown(): void
@@ -35,35 +35,31 @@ final class RequestHandlerKernelTest extends TestCase
             'path' => '/items',
             'queryStringParameters' => ['page' => '2'],
             'headers' => [
-                'Host' => 'internal.local',
-                'X-Forwarded-For' => '203.0.113.7',
-                'X-Forwarded-Host' => 'api.example.com',
+                'X-Real-Ip' => '2001:db8::1',
+                'X-Forwarded-For' => '203.0.113.66,2001:db8::1',
+                'X-Forwarded-Host' => 'spoofed.example',
                 'X-Forwarded-Proto' => 'https',
             ],
         ]);
 
         self::assertSame('https://api.example.com/items?page=2', $echo['uri']);
-        self::assertSame('203.0.113.7', $echo['remoteAddr']);
+        self::assertSame('2001:db8::1', $echo['remoteAddr']);
         self::assertSame(['page' => '2'], $echo['query']);
     }
 
-    public function testRequestWithoutForwardedHeadersComesFromThePlatformProxy(): void
+    public function testCronEventComesFromThePlatformProxy(): void
     {
-        $echo = $this->echo(['path' => '/', 'headers' => ['Host' => 'internal.local']]);
+        $echo = $this->echo(['path' => '/', 'httpMethod' => 'POST', 'headers' => ['X-Forwarded-Proto' => 'http']]);
 
-        self::assertSame('http://internal.local/', $echo['uri']);
+        self::assertSame('http://api.example.com/', $echo['uri']);
         self::assertSame('127.0.0.1', $echo['remoteAddr']);
-    }
-
-    public function testEventWithoutHostGetsAParsableUri(): void
-    {
-        self::assertSame('http://localhost/', $this->echo(['path' => '/'])['uri']);
-        self::assertSame('https://localhost/', $this->echo(['path' => '/', 'headers' => ['X-Forwarded-Proto' => 'https']])['uri']);
     }
 
     public function testMalformedHostIsABadRequestThatSkipsTheHandler(): void
     {
-        $functionResponse = $this->runner->invoke(['path' => '/', 'headers' => ['Host' => 'internal.local', 'X-Forwarded-Host' => 'bad host!']], []);
+        // Only reachable when the application trusts X-Forwarded-Host itself.
+        Request::setTrustedProxies(['127.0.0.1'], Request::HEADER_X_FORWARDED_HOST);
+        $functionResponse = $this->runner->invoke(['path' => '/', 'headers' => ['X-Forwarded-Host' => 'bad host!']], []);
 
         self::assertSame(400, $functionResponse['statusCode']);
         self::assertSame(0, $this->handler->handled);

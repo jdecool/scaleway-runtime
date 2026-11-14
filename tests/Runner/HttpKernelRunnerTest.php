@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace JDecool\ScalewayRuntime\Tests\Runner;
 
-use JDecool\ScalewayRuntime\HttpConverter;
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Tests\Fixtures\RecordingKernel;
 use PHPUnit\Framework\TestCase;
@@ -28,12 +27,20 @@ final class HttpKernelRunnerTest extends TestCase
         Request::setTrustedProxies([], 0);
     }
 
-    public function testPlatformProxyIsTrustedByDefault(): void
+    public function testNoProxyIsTrusted(): void
     {
         new HttpKernelRunner(new RecordingKernel(), $this->errorLog);
 
-        self::assertSame([HttpConverter::PROXY_ADDRESS], Request::getTrustedProxies());
-        self::assertSame(HttpConverter::TRUSTED_HEADERS, Request::getTrustedHeaderSet());
+        self::assertSame([], Request::getTrustedProxies());
+    }
+
+    public function testRequestsGetTheHostOfTheFunction(): void
+    {
+        $kernel = new RecordingKernel();
+
+        new HttpKernelRunner($kernel, $this->errorLog, 'app.example.com')->invoke(['path' => '/'], []);
+
+        self::assertSame('app.example.com', $kernel->lastRequest?->getHost());
     }
 
     public function testTrustedProxiesConfiguredByTheAppAreKept(): void

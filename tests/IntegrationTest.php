@@ -45,11 +45,11 @@ final class IntegrationTest extends TestCase
                 'path' => '/state',
                 'method' => 'GET',
                 'queryStringParameters' => ['page' => '2'],
-                'headers' => ['Host' => 'internal.local', 'X-Forwarded-Proto' => 'https', 'X-Forwarded-For' => '203.0.113.7'],
+                'headers' => ['X-Forwarded-Proto' => 'https', 'X-Real-Ip' => '203.0.113.7'],
                 'body' => '',
                 'isBase64Encoded' => false,
             ],
-            ['path' => '/state', 'method' => 'GET', 'headers' => ['Host' => 'internal.local']],
+            ['path' => '/state', 'method' => 'GET', 'headers' => []],
         ]);
 
         self::assertSame(200, $first['statusCode']);
@@ -134,7 +134,7 @@ final class IntegrationTest extends TestCase
     public function testRawCallableIsBuiltOnceAndGetsEveryEventUntouchedCronIncluded(): void
     {
         $cron = ['method' => 'POST', 'path' => '/', 'body' => '{"command":"app:count","secret":"cron-secret"}'];
-        $http = ['path' => '/state', 'method' => 'GET', 'headers' => ['Host' => 'internal.local'], 'isBase64Encoded' => false];
+        $http = ['path' => '/state', 'method' => 'GET', 'headers' => ['X-Real-Ip' => '203.0.113.7'], 'isBase64Encoded' => false];
 
         [$first, $second] = $this->invoke([$http, $cron], ['front_controller' => 'public/raw.php']);
 
@@ -153,18 +153,17 @@ final class IntegrationTest extends TestCase
                 'path' => '/upload',
                 'method' => 'POST',
                 'headers' => [
-                    'Host' => 'internal.local',
                     'Content-Type' => 'multipart/form-data; boundary=b',
-                    'X-Forwarded-For' => '203.0.113.7',
-                    'X-Forwarded-Host' => 'api.example.com',
+                    'X-Real-Ip' => '203.0.113.7',
+                    'X-Forwarded-Host' => 'spoofed.example',
                     'X-Forwarded-Proto' => 'https',
                 ],
                 'body' => base64_encode("--b\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nReport\r\n"
                     ."--b\r\nContent-Disposition: form-data; name=\"doc\"; filename=\"report.csv\"\r\n\r\na,b\r\n--b--\r\n"),
                 'isBase64Encoded' => true,
             ],
-            ['path' => '/', 'headers' => ['Host' => 'internal.local']],
-        ], ['front_controller' => 'public/request-handler.php']);
+            ['path' => '/'],
+        ], ['front_controller' => 'public/request-handler.php', 'host' => 'api.example.com']);
 
         self::assertSame(201, $first['statusCode']);
         self::assertIsArray($first['headers']);
@@ -178,7 +177,7 @@ final class IntegrationTest extends TestCase
         self::assertSame(['title' => 'Report'], $first['parsedBody']);
         self::assertSame(['doc' => ['name' => 'report.csv', 'content' => 'a,b']], $first['files']);
         self::assertSame([], glob($this->dir.'/tmp/php*'), 'Uploaded files must be deleted after the Invocation.');
-        self::assertSame(['uri' => 'http://internal.local/', 'remoteAddr' => '127.0.0.1', 'handled' => 2, 'resets' => 1], array_intersect_key($second, ['uri' => 0, 'remoteAddr' => 0, 'handled' => 0, 'resets' => 0]));
+        self::assertSame(['uri' => 'http://api.example.com/', 'remoteAddr' => '127.0.0.1', 'handled' => 2, 'resets' => 1], array_intersect_key($second, ['uri' => 0, 'remoteAddr' => 0, 'handled' => 0, 'resets' => 0]));
         self::assertSame($first['pid'], $second['pid']);
     }
 
