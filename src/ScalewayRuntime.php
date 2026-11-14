@@ -111,6 +111,12 @@ class ScalewayRuntime extends SymfonyRuntime
             $application->setDefaultCommand((string) $command->getName(), true);
         }
         if ($application instanceof Application) {
+            // FrameworkBundle's Application boots its Kernel on its first run only, and never again once that boot
+            // failed: booting here makes it a boot failure the Handler retries, as for a Kernel.
+            if ($application instanceof FrameworkApplication) {
+                $application->getKernel()->boot();
+            }
+
             return new ConsoleRunner(static fn (): Application => $application, null, $errorLog);
         }
 

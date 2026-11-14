@@ -56,8 +56,8 @@ final class ConsoleRunner implements InvocationRunner
         $input->setInteractive(false);
         $output = new BufferedOutput(decorated: false);
 
-        // The Kernel resets its services before handling a request, not before a command: the previous HTTP Invocation
-        // left them dirty. Only a runner serving HTTP has had such Invocations, and its Kernel is booted already.
+        // The Kernel resets its services before handling a request, not before a command: a previous HTTP Invocation
+        // left them dirty. Only a runner serving HTTP has such Invocations.
         if (null !== $this->httpRunner) {
             $this->console->reset();
         }
@@ -68,8 +68,7 @@ final class ConsoleRunner implements InvocationRunner
             try {
                 $this->console->reset();
             } catch (\Throwable $e) {
-                // A Kernel that failed to boot has nothing to reset, and its boot error is in the output already;
-                // like a failed Kernel termination, it must not replace the Function Response.
+                // The command has run: like a failed Kernel termination, this must not replace its Function Response.
                 fwrite($this->errorLog, 'Service reset failed: '.$e.\PHP_EOL);
             }
         }

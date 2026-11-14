@@ -218,6 +218,16 @@ final class HandlerTest extends TestCase
         self::assertStringContainsString('Service reset failed: LogicException: Reset failed on purpose.', $this->errorLog());
     }
 
+    public function testFailedKernelBootOfAConsoleFrontControllerIsRetriedOnNextInvocation(): void
+    {
+        RecordingKernel::$failingBuilds = 1;
+        $handler = $this->handler(['front_controller' => 'front-controllers/console-boot-fails.php', 'debug' => false]);
+
+        self::assertSame(500, $handler->invoke($this->commandEvent('list'), [])['statusCode']);
+        self::assertStringContainsString('Boot failed on purpose.', $this->errorLog());
+        self::assertSame(200, $handler->invoke($this->commandEvent('list'), [])['statusCode']);
+    }
+
     public function testCommandFrontControllerRunsItsCommandWhateverTheName(): void
     {
         $handler = $this->handler(['front_controller' => 'front-controllers/command.php']);
