@@ -72,6 +72,9 @@ final class IntegrationTest extends TestCase
         [$response] = $this->invoke([['path' => '/missing', 'method' => 'GET']]);
 
         self::assertSame(404, $response['statusCode']);
+        self::assertIsString($response['body']);
+        // The CLI error renderer Symfony picks outside a web SAPI would dump the exception, even in prod.
+        self::assertStringNotContainsString('NotFoundHttpException', $response['body']);
     }
 
     public function testMultipartUploadReachesTheController(): void
@@ -119,6 +122,13 @@ final class IntegrationTest extends TestCase
         self::assertSame(['message' => 'Hello Ada!', 'secure' => true, 'env' => 'prod', 'calls' => 1], array_diff_key($first, ['pid' => 0]));
         self::assertSame(['message' => 'Hello Grace!', 'secure' => false, 'env' => 'prod', 'calls' => 2], array_diff_key($second, ['pid' => 0]));
         self::assertSame($first['pid'], $second['pid']);
+    }
+
+    public function testFunctionWithoutAppEnvRunsProdDespiteTheDotenvFile(): void
+    {
+        [$response] = $this->invoke([['path' => '/']], ['front_controller' => 'public/hello.php'], []);
+
+        self::assertSame('prod', $this->json($response)['env']);
     }
 
     public function testRawCallableIsBuiltOnceAndGetsEveryEventUntouchedCronIncluded(): void
@@ -220,10 +230,11 @@ final class IntegrationTest extends TestCase
     /**
      * @param list<array<string, mixed>> $events
      * @param array<string, mixed>       $options runtime options on top of "project_dir"
+     * @param array<string, string>      $appEnv  the APP_* variables of the function's environment
      *
      * @return array<array<mixed>>
      */
-    private function invoke(array $events, array $options = []): array
+    private function invoke(array $events, array $options = [], array $appEnv = ['APP_ENV' => 'prod', 'APP_DEBUG' => '0']): array
     {
         $driver = 'require $argv[1]; echo json_encode(array_map(fn ($event) => handle($event, []), json_decode(stream_get_contents(STDIN), true)));';
         $process = proc_open(
@@ -231,9 +242,7 @@ final class IntegrationTest extends TestCase
             [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['pipe', 'w']],
             $pipes,
             null,
-            [
-                'APP_ENV' => 'prod',
-                'APP_DEBUG' => '0',
+            $appEnv + [
                 'APP_RUNTIME_OPTIONS' => json_encode(['project_dir' => $this->projectDir] + $options, \JSON_THROW_ON_ERROR),
                 'TMPDIR' => $this->dir.'/tmp',
                 'SCALEWAY_CRON_SECRET' => 'cron-secret',

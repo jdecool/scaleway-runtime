@@ -26,6 +26,8 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  * On top of the options managed by SymfonyRuntime, it accepts:
  *  - "front_controller": the Front Controller path, relative to "project_dir"; defaults to "public/index.php".
  *
+ * Unlike SymfonyRuntime, it defaults the env to prod when the process environment sets none, whatever .env files say.
+ *
  * When the project's var/ directory is not writable (the deployed code may be read-only),
  * the cache and log dirs move to the system temp dir through APP_CACHE_DIR and APP_LOG_DIR,
  * while APP_BUILD_DIR keeps the container warmed at build time.
@@ -50,7 +52,16 @@ class ScalewayRuntime extends SymfonyRuntime
      */
     public function __construct(array $options = [])
     {
+        $envKey = \is_string($options['env_var_name'] ?? null) ? $options['env_var_name'] : 'APP_ENV';
+        // The shipped .env says dev, whose error pages leak stack traces: only the function's own environment,
+        // or the "env" option, may choose another env than prod (see docs/adr/0006-default-to-the-prod-env.md).
+        $options['env'] ??= ($_SERVER[$envKey] ?? null) ?: ($_ENV[$envKey] ?? null) ?: getenv($envKey) ?: 'prod';
+
         parent::__construct($options); // @phpstan-ignore argument.type (options come from untyped config)
+
+        // Invocations are web requests served by a long-lived process, as in FrankenPHP's worker mode; in a CLI SAPI,
+        // FrameworkBundle would otherwise render error pages with its CLI renderer, which dumps the exception even in prod.
+        $_SERVER['APP_RUNTIME_MODE'] ??= 'web=1&worker=1';
 
         $projectDir = $this->options['project_dir'] ?? null;
         if (\is_string($projectDir) && !is_writable(is_dir($projectDir.'/var') ? $projectDir.'/var' : $projectDir)) {

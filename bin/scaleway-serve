@@ -48,6 +48,11 @@ function start(array $command, ?array $env = null)
     return $process;
 }
 
+// The Handler runs prod when APP_ENV is unset, to keep debug pages off the platform; locally they are wanted.
+if (!getenv('APP_ENV')) {
+    putenv('APP_ENV=dev');
+}
+
 $startWarmProcess = static function () use ($handlerFile, $socket) {
     $warmProcess = start([\PHP_BINARY, __DIR__.'/../resources/emulator/warm-process.php', $handlerFile, $socket]);
     // Waits until it listens, so the first requests do not find the socket closed.

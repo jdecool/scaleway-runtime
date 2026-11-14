@@ -96,16 +96,17 @@ Set these on the function, in production:
 
 | Variable | Kind | Why |
 | --- | --- | --- |
-| `APP_ENV=prod` | Plain | Without it the application runs in `dev`, see below. |
 | `APP_SECRET` | Secret | Symfony's `kernel.secret`, used to sign URLs, cookies and CSRF tokens. |
 | `SCALEWAY_CRON_SECRET` | Secret | Only to run console commands from CRON triggers, see [Command Invocations](#command-invocations). |
+| `APP_ENV` | Plain | Only to run another env than `prod`, see below. |
 
-> [!WARNING]
-> The `.env` file is shipped in the zip, and the one Symfony generates says `APP_ENV=dev`.
-> Without an `APP_ENV` variable on the function, the application therefore runs with `APP_ENV=dev` and debug enabled, and shows stack traces to anyone.
-> On a read-only code directory it is even worse: the dev container cannot be built next to the prod one warmed in the zip, so every Invocation answers a 500 whose body is the full stack trace, file paths included.
+The `.env` file is shipped in the zip, and the one Symfony generates says `APP_ENV=dev`, whose error pages show stack traces to anyone.
+So the runtime runs `prod` when the function's environment sets no `APP_ENV` (or an empty one), whatever the `.env` files say ([ADR 0006](docs/adr/0006-default-to-the-prod-env.md)).
+Only an `APP_ENV` variable of the function, or the `env` runtime option, picks another env.
+`APP_DEBUG` follows: off in `prod`, unless set by the function's environment or a `.env` file.
+The Emulator runs `dev` instead, unless it is started with an `APP_ENV`.
 
-Real environment variables win over `.env` files, as usual with Symfony's Dotenv.
+For every other variable, real environment variables win over `.env` files, as usual with Symfony's Dotenv.
 `.env.local`, `.env.local.php` and `.env.*.local` are never shipped.
 
 ### Writable directories
@@ -125,6 +126,9 @@ Logs written to files are lost with the instance: send them to `php://stderr` in
 An exception escaping the Application (a Kernel failing to boot, an unsupported Front Controller...) is logged to stderr and answered with a 500.
 Its body is `Internal Server Error`, or the full exception when `APP_DEBUG` is true.
 A Kernel that failed to boot is built again from scratch on the next Invocation.
+
+Errors the Kernel handles itself get Symfony's web error pages, as the runtime sets `APP_RUNTIME_MODE=web=1&worker=1` unless your environment sets it.
+Outside a web SAPI, FrameworkBundle would pick its CLI error renderer instead, which dumps the exception even in `prod`.
 
 ## Supported Applications
 
@@ -345,6 +349,7 @@ vendor/bin/scaleway-serve [127.0.0.1:8000]
 
 The Emulator turns each HTTP request into an Event, calls your `handle()` and turns the Function Response back into the HTTP response.
 `handle()` runs in one long-lived PHP process, as in a Warm Process: restart the Emulator after changing code.
+It sets `APP_ENV=dev` unless started with an `APP_ENV`, as the deployed function defaults to `prod`.
 A crashed process is replaced by a fresh one, as Scaleway starts a new instance.
 
 PHP's built-in server receives the requests, and forwards the Events to that process over a Unix socket in a private temporary directory.
@@ -370,7 +375,7 @@ SCALEWAY_CRON_SECRET=local-secret vendor/bin/scaleway-serve
 curl -X POST http://127.0.0.1:8000/ --data '{"command": "app:greet", "args": {"name": "Scaleway"}, "secret": "local-secret"}'
 ```
 
-To run exactly what gets deployed, serve the packaged zip from a read-only copy:
+To run exactly what gets deployed, serve the packaged zip from a read-only copy, in `prod`:
 
 ```sh
 vendor/bin/scaleway-package
