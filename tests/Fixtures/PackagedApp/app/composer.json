@@ -1,0 +1,16 @@
+{
+    "name": "acme/packaged-app",
+    "description": "An application packaged without any network access",
+    "type": "project",
+    "require": {
+        "acme/lib": "*@dev"
+    },
+    "require-dev": {
+        "acme/dev-tool": "*@dev"
+    },
+    "repositories": [
+        {"type": "path", "url": "../lib"},
+        {"type": "path", "url": "../dev-tool"},
+        {"packagist.org": false}
+    ]
+}

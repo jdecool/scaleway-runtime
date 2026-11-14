@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+
+// Stands in for "bin/console cache:warmup": records what the build dir looks like while the Packager runs it.
+$buildDir = dirname(__DIR__);
+file_put_contents((string) getenv('PACKAGER_TEST_RECORD'), json_encode([
+    'buildDir' => $buildDir,
+    'perms' => fileperms($buildDir) & 0o777,
+    'argv' => array_slice($argv, 1),
+    'appEnv' => getenv('APP_ENV'),
+    'lock' => file_get_contents($buildDir.'/composer.lock'),
+]));
+
+exit(getenv('PACKAGER_TEST_FAIL') ? 1 : 0);
