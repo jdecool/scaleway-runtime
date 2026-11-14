@@ -4,15 +4,21 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "21b3b8429cebd5729128c875480d674e",
+    "content-hash": "ce3d8d04ea76684394db0bfd13643957",
     "packages": [
         {
             "name": "jdecool/scaleway-runtime",
             "version": "dev-main",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/jdecool/scaleway-runtime.git",
+                "reference": "2bca48794148548c4e0ccb117bf440b18243ee2c"
+            },
             "dist": {
-                "type": "path",
-                "url": "..",
-                "reference": "be2173fff3fe2d01845c6b5283000c20f1836204"
+                "type": "zip",
+                "url": "https://api.github.com/repos/jdecool/scaleway-runtime/zipball/2bca48794148548c4e0ccb117bf440b18243ee2c",
+                "reference": "2bca48794148548c4e0ccb117bf440b18243ee2c",
+                "shasum": ""
             },
             "require": {
                 "php": ">=8.4",
@@ -39,6 +45,7 @@
                 "symfony/console": "To run Command Invocations and Front Controllers returning a Console Application or a Command",
                 "symfony/psr-http-message-bridge": "To run Front Controllers returning a PSR-15 request handler"
             },
+            "default-branch": true,
             "bin": [
                 "bin/scaleway-init",
                 "bin/scaleway-package",
@@ -50,30 +57,7 @@
                     "JDecool\\ScalewayRuntime\\": "src/"
                 }
             },
-            "autoload-dev": {
-                "psr-4": {
-                    "JDecool\\ScalewayRuntime\\Tests\\": "tests/"
-                }
-            },
-            "scripts": {
-                "test": [
-                    "phpunit"
-                ],
-                "phpstan": [
-                    "phpstan analyse"
-                ],
-                "cs": [
-                    "php-cs-fixer fix --dry-run --diff"
-                ],
-                "cs-fix": [
-                    "php-cs-fixer fix"
-                ],
-                "check": [
-                    "@cs",
-                    "@phpstan",
-                    "@test"
-                ]
-            },
+            "notification-url": "https://packagist.org/downloads/",
             "license": [
                 "MIT"
             ],
@@ -89,9 +73,12 @@
                 "serverless",
                 "symfony"
             ],
-            "transport-options": {
-                "relative": true
-            }
+            "support": {
+                "issues": "https://github.com/jdecool/scaleway-runtime/issues",
+                "source": "https://github.com/jdecool/scaleway-runtime/tree/main"
+            },
+            "time": "2026-11-14T11:10:50+00:00",
+            "published-time": "2026-11-14T12:52:57+00:00"
         },
         {
             "name": "psr/cache",
