@@ -273,6 +273,7 @@ final class HttpConverterTest extends TestCase
 
         self::assertSame('http://localhost/jobs', $request->getUri());
         self::assertSame(80, $request->getPort());
+        self::assertSame('http://localhost/jobs', HttpConverter::toRequest(['path' => '/jobs', 'headers' => ['Host' => '']])->getUri());
     }
 
     public function testFunctionResponseFromTextResponse(): void
