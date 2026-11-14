@@ -23,6 +23,16 @@ Select it with the `front_controller` runtime option, for instance `APP_RUNTIME_
 A Front Controller may also return a PSR-15 `RequestHandlerInterface`, built once and reused like the Kernel, once the application requires `symfony/psr-http-message-bridge` and `nyholm/psr7`.
 Its PSR-7 request sees the client, scheme and host resolved from the platform's `X-Forwarded-*` headers, in `getUri()` as in the `REMOTE_ADDR`, `HTTPS` and `HTTP_HOST` server params.
 
+A Front Controller whose closure returns another `Closure` talks to Scaleway without any translation: that raw callable, built once and reused like the Kernel, receives every Event and context as they are, CRON Invocations included, and returns the Function Response itself.
+
+```php
+return static fn (): Closure => static fn (array $event, mixed $context): array => [
+    'statusCode' => 200,
+    'headers' => ['Content-Type' => 'text/plain'],
+    'body' => 'Hello from '.($event['path'] ?? '/'),
+];
+```
+
 ## Run it locally
 
 ```sh
