@@ -52,7 +52,8 @@ Recorded per phase; the settled design above already reflects them.
 
 ## Remaining work
 
-1. Push the repository to GitHub (https://github.com/jdecool/scaleway-runtime) and get CI green there.
-2. Publish the package on Packagist, then regenerate `example/composer.lock` against it (`composer update jdecool/scaleway-runtime` without the local repository) and commit it.
-3. Apply the example's Terraform, never applied so far, and run `example/e2e/run.sh` against the deployment, with `host` set on a second apply.
-4. Measure what the probe left open: where logs go (Cockpit), and what a deployment with a failing Composer script serves.
+Done on 2026-11-14: the repository is on GitHub with CI green, the package is on Packagist, `example/composer.lock` is locked from Packagist, and `example/e2e/run.sh` passed against the example deployed on Scaleway (`php85`), before `v0.1.0` was tagged.
+
+1. Verify a Command Invocation end to end on Scaleway: the e2e scenarios trigger CRON Invocations only through the Emulator, and the deployed one could only be observed in the logs.
+2. Run the example deployment with `host` set, to check absolute URLs.
+3. Measure what the probe left open: where logs go (Cockpit), and what a deployment with a failing Composer script serves.
