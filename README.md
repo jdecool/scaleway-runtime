@@ -253,7 +253,7 @@ An invokable object is not taken for a raw callable; return `$object(...)` to ma
 
 ### CRON triggers
 
-A CRON trigger calls the Application with a `POST /` whose JSON body holds the trigger's arguments.
+A CRON trigger is assumed to call the Application with a `POST /` whose JSON body holds the trigger's arguments: Scaleway does not document the CRON Event, and the [probe](probe) checks it.
 With a Kernel, handle it like any route:
 
 ```php
