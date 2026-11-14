@@ -523,13 +523,19 @@ Headers whose name holds an underscore (`X_Real_Ip`) are dropped, as nginx and A
 
 Scaleway runs `composer install --no-dev` in the function's directory when the zip holds a `composer.json` at its root, replacing any shipped `vendor/`.
 Every locked package must therefore be downloadable from Scaleway, and the function's environment variables are not available to Composer scripts.
+The lock must also install on the function's runtime: set `config.platform.php` in `composer.json` to its PHP version (`8.4` for `php84`, `8.5` for `php85`) so that `composer update` resolves for it.
 A failing install or script does not fail the deployment, and Scaleway serves the new code anyway, never the previous version ([measured](docs/probe-results.md#failed-scripts-and-installs)):
 
 - a failing script runs once `vendor/` and its autoloader are complete, so the new code works, without what the script should have done (a warmed cache, generated files...);
-- a failing install leaves no `vendor/` at all: every Invocation answers a `500`, and logs `Failed to open stream` for `vendor/autoload.php` on stdout.
+- a failing install, from a package Scaleway cannot download or a platform requirement its runtime does not meet, leaves no `vendor/` at all: every Invocation answers a `500`, the first one of each instance logging `Failed to open stream` for `vendor/autoload.php` on stdout, the next ones `Class "JDecool\ScalewayRuntime\Handler" not found` on stderr.
 
 Neither shows anywhere: the function is `ready`, its `error_message` and `build_message` stay empty, and Composer's output reaches neither Cockpit nor `scw`.
-So after each deploy, call the function and check its [logs](#logs).
+So after each deploy, call a route that should answer a `200`, and check the function's [logs](#logs) if it does not:
+
+```sh
+curl -sS -o /dev/null -w '%{http_code}\n' "https://$(scw function function list name=<function name> -o json | jq -r '.[0].domain_name')/<route>"
+```
+
 Keep deploy-time scripts to what the application can do without, as a cache warmup the first Invocation redoes, and run whatever it needs at runtime instead.
 
 ### Windows
