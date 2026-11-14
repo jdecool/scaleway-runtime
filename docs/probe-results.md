@@ -28,7 +28,7 @@ Client addresses are replaced with documentation addresses (`2001:db8::1`, `203.
 Keys: `resource`, `path`, `httpMethod`, `headers`, `multiValueHeaders` (null), `queryStringParameters`, `multiValueQueryStringParameters` (null), `pathParameters` (null), `stageVariables`, `requestContext` (with `httpMethod`), `body`, `isBase64Encoded`.
 
 - The method is in `httpMethod`; there is no `method` key.
-- `queryStringParameters` is decoded and keeps the last value of repeated keys: `?repeated=a&repeated=b&list[]=x&list[]=y` gives `{"repeated": "b", "list[]": "y"}`; it is an empty list `[]` when there is no query string.
+- `queryStringParameters` is decoded, sorted by key, and keeps the last value of repeated keys: `?repeated=a&repeated=b&list[]=x&list[]=y` gives `{"repeated": "b", "list[]": "y"}`; it is an empty list `[]` when there is no query string.
 - Header names are canonicalised (`X-Custom`, `User-Agent`), single string values.
 - There is no `Host` header.
 - `isBase64Encoded` is `true` with a base64 body for binary and multipart bodies, `true` with an empty body for GET, and absent for text bodies (JSON, plain text).

@@ -63,7 +63,7 @@ status=$(request query "$base_url/echo?foo=bar&n=42&list%5Bkey%5D=v")
 expect "GET /echo status" "$status" 200
 expect "GET /echo method" "$(field query method)" GET
 expect "GET /echo path" "$(field query path)" /echo
-expect "GET /echo query" "$(field query query)" '{"foo":"bar","n":"42","list":{"key":"v"}}'
+expect "GET /echo query" "$(field query query)" '{"foo":"bar","list":{"key":"v"},"n":"42"}'
 
 status=$(request headers -H 'X-Custom: hello' -H 'Accept-Language: fr' --cookie 'flavor=chocolate; size=large' "$base_url/echo")
 expect "custom request header" "$(field headers headers.x-custom)" hello

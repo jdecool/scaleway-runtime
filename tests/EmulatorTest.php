@@ -36,7 +36,7 @@ final class EmulatorTest extends TestCase
                 'X-Real-Ip' => '2001:db8::1',
             ],
             'multiValueHeaders' => null,
-            'queryStringParameters' => ['sort' => 'name', 'filter[role]' => 'admin user', 'flag' => ''],
+            'queryStringParameters' => ['filter[role]' => 'admin user', 'flag' => '', 'sort' => 'name'],
             'multiValueQueryStringParameters' => null,
             'pathParameters' => null,
             'stageVariables' => [],
@@ -90,7 +90,7 @@ final class EmulatorTest extends TestCase
         $request = HttpConverter::toRequest(Emulator::toEvent('GET', '/search?q=caf%C3%A9&page%5Bsize%5D=10', [], '', '192.0.2.1'));
 
         self::assertSame('/search', $request->getPathInfo());
-        self::assertSame(['q' => 'café', 'page' => ['size' => '10']], $request->query->all());
+        self::assertSame(['page' => ['size' => '10'], 'q' => 'café'], $request->query->all());
         self::assertSame('192.0.2.1', $request->getClientIp());
         self::assertTrue($request->isSecure());
     }

@@ -392,7 +392,7 @@ PHP's built-in server receives the requests, and forwards the Events to that pro
 
 The Event and the context are built the way the platform builds them ([measured](docs/probe-results.md)):
 
-- the `httpMethod`, `queryStringParameters` (the last value of a repeated key winning, `[]` without query string) and other keys of the platform;
+- the `httpMethod`, `queryStringParameters` (sorted by key, the last value of a repeated key winning, `[]` without query string) and other keys of the platform;
 - header names in `Title-Case`, repeated headers joined with `, `, no `Host`;
 - `X-Real-Ip`, `X-Envoy-External-Address`, `X-Request-Id` and `X-Forwarded-Proto: https` set whatever the client sends, the client's `X-Forwarded-For` kept in front of its address, its `X-Forwarded-Host` passed through;
 - empty, multipart and non UTF-8 bodies base64-encoded with `isBase64Encoded: true`, text bodies without the flag.
@@ -449,7 +449,7 @@ Everything else survives, so your application must be safe for long-running exec
   Read the `Request` object instead; `Request::createFromGlobals()` does not describe the Invocation.
 - **Output**: only the returned `Response` reaches the client.
   `echo` outside the Response, `header()` and `http_response_code()` do not: Scaleway does not put stdout in the response body.
-- **Query strings**: the Event carries `queryStringParameters` as a map, so a repeated key such as `a=1&a=2`, or `tags[]=a&tags[]=b`, reaches the Application with its last value only.
+- **Query strings**: the Event carries `queryStringParameters` as a map, so a repeated key such as `a=1&a=2`, or `tags[]=a&tags[]=b`, reaches the Application with its last value only, and the keys arrive sorted, not in the order the client sent them.
   Keys are then parsed like PHP does, so `a.b` becomes `a_b` and `a[b]` nests.
 - **Form bodies**: `application/x-www-form-urlencoded` bodies are parsed for `POST`, `PUT`, `DELETE`, `PATCH` and `QUERY`, `multipart/form-data` only for `POST`, as PHP does.
   Uploaded files are `UploadedFile` objects in test mode: `move()` works, `is_uploaded_file()` does not.

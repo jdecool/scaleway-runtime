@@ -39,6 +39,8 @@ final class Emulator
                 $query[urldecode($name)] = urldecode($value);
             }
         }
+        // The platform sorts the keys, so the application never sees the client's order.
+        ksort($query);
 
         $canonical = self::canonicalize($headers);
         $contentType = $canonical['Content-Type'] ?? '';
