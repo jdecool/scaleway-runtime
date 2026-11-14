@@ -7,3 +7,9 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
+
+    # Symfony's fallback logger writes to stderr, which reaches Cockpit, but from the error level only:
+    # lowered to info so the CRON and Command Invocations show up there, without requiring Monolog.
+    logger:
+        class: Symfony\Component\HttpKernel\Log\Logger
+        arguments: ['info']

@@ -26,9 +26,11 @@ final class DemoController
     #[Route('/', methods: ['POST'])]
     public function cron(Request $request, LoggerInterface $logger): JsonResponse
     {
-        $logger->info('CRON Invocation received', ['body' => $request->getContent()]);
+        $args = json_decode($request->getContent(), true);
+        // A body meant as a Command Invocation but rejected lands here: its secret must not reach the logs.
+        $logger->info('CRON Invocation received with the arguments {keys}', ['keys' => implode(',', array_keys(\is_array($args) ? $args : []))]);
 
-        return new JsonResponse(['cron' => true, 'args' => json_decode($request->getContent(), true)]);
+        return new JsonResponse(['cron' => true, 'args' => $args]);
     }
 
     #[Route('/hello', methods: ['GET'])]
