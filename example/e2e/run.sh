@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
 # End-to-end scenarios for the example application.
-# Usage: [SCALEWAY_CRON_SECRET=...] example/e2e/run.sh <base-url>
+# Usage: [SCALEWAY_CRON_SECRET=...] [SCALEWAY_HOST=...] example/e2e/run.sh <base-url>
+#   SCALEWAY_HOST: the function's "host", which absolute URLs must carry; localhost, the runtime's default, when unset
 #   against the Emulator:   example/e2e/run.sh http://127.0.0.1:8000
 #   against the deployment: example/e2e/run.sh "$(terraform -chdir=example/terraform output -raw endpoint)"
 # Requires bash, curl and php (used to read JSON and hash files).
@@ -75,6 +76,17 @@ expect "HTTPS, as the platform terminates TLS" "$(field headers secure)" true
 status=$(request forwarded -H 'X-Forwarded-For: 203.0.113.66' -H 'X-Forwarded-Host: spoofed.example' -H 'X-Real-Ip: 203.0.113.66' "$base_url/echo")
 expect "forged X-Forwarded-Host ignored" "$(field forwarded uri | grep -c spoofed.example)" 0
 expect "forged client IP ignored" "$(field forwarded clientIp | grep -c 203.0.113.66)" 0
+
+# The host comes from the "host" runtime option, never from the client.
+host=${SCALEWAY_HOST:-localhost}
+status=$(request urls -H 'X-Forwarded-Host: spoofed.example' "$base_url/urls?a=1")
+expect "GET /urls status" "$status" 200
+expect "absolute URL from the router" "$(field urls absoluteUrl)" "https://$host/hello?name=url"
+expect "Request URI" "$(field urls uri)" "https://$host/urls?a=1"
+expect "scheme and host" "$(field urls schemeAndHttpHost)" "https://$host"
+
+status=$(request redirect "$base_url/redirect")
+expect "redirect to an absolute URL" "$status $(header redirect location)" "302 https://$host/hello?name=redirect"
 
 status=$(request json -X POST -H 'Content-Type: application/json' --data '{"answer":42}' "$base_url/echo")
 expect "POST JSON body" "$(field json body)" '{"answer":42}'

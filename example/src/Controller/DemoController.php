@@ -6,10 +6,12 @@ use Psr\Log\LoggerInterface;
 use Symfony\Component\HttpFoundation\Cookie;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 final class DemoController
 {
@@ -19,7 +21,7 @@ final class DemoController
     #[Route('/', methods: ['GET'])]
     public function index(): JsonResponse
     {
-        return new JsonResponse(['routes' => ['/hello', '/echo', '/cookies', '/binary', '/stream', '/counter']]);
+        return new JsonResponse(['routes' => ['/hello', '/echo', '/cookies', '/binary', '/stream', '/counter', '/urls', '/redirect']]);
     }
 
     // CRON Invocations arrive as a POST on "/" with the trigger's arguments as body.
@@ -34,7 +36,7 @@ final class DemoController
         return new JsonResponse(['cron' => true, 'args' => $args]);
     }
 
-    #[Route('/hello', methods: ['GET'])]
+    #[Route('/hello', name: 'hello', methods: ['GET'])]
     public function hello(Request $request): JsonResponse
     {
         return new JsonResponse(['message' => \sprintf('Hello %s!', $request->query->getString('name', 'world'))]);
@@ -63,6 +65,23 @@ final class DemoController
                 'sha256' => hash_file('sha256', $file->getPathname()),
             ], array_filter($request->files->all(), static fn ($file) => $file instanceof UploadedFile)),
         ]);
+    }
+
+    // Every host in here is the "host" runtime option's, as no Host header reaches the function.
+    #[Route('/urls', methods: ['GET'])]
+    public function urls(Request $request, UrlGeneratorInterface $urlGenerator): JsonResponse
+    {
+        return new JsonResponse([
+            'absoluteUrl' => $urlGenerator->generate('hello', ['name' => 'url'], UrlGeneratorInterface::ABSOLUTE_URL),
+            'uri' => $request->getUri(),
+            'schemeAndHttpHost' => $request->getSchemeAndHttpHost(),
+        ]);
+    }
+
+    #[Route('/redirect', methods: ['GET'])]
+    public function redirect(UrlGeneratorInterface $urlGenerator): RedirectResponse
+    {
+        return new RedirectResponse($urlGenerator->generate('hello', ['name' => 'redirect'], UrlGeneratorInterface::ABSOLUTE_URL));
     }
 
     #[Route('/cookies', methods: ['GET'])]
