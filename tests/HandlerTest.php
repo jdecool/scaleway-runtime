@@ -258,6 +258,68 @@ final class HandlerTest extends TestCase
         self::assertSame('handled #1 /', $handler->invoke(['path' => '/'], [])['body']);
     }
 
+    public function testRawCallableIsBuiltOnceAndGetsEveryEventAndContextUntouched(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/raw.php']);
+        $event = ['path' => '/', 'httpMethod' => 'GET', 'headers' => ['X-Forwarded-For' => '203.0.113.7'], 'body' => 'raw'];
+
+        $first = $handler->invoke($event, ['memoryLimitInMb' => 128]);
+        $second = $handler->invoke(['path' => '/again'], null);
+
+        self::assertSame(202, $first['statusCode']);
+        self::assertSame(['Content-Type' => 'application/json', 'X-Multi' => ['a', 'b']], $first['headers']);
+        self::assertFalse($first['isBase64Encoded'] ?? null);
+        self::assertArrayNotHasKey('multiValueHeaders', $first, 'Keys Scaleway does not document must be dropped.');
+        self::assertSame(['calls' => 1, 'event' => $event, 'context' => ['memoryLimitInMb' => 128]], $this->decode($first));
+        self::assertSame(['calls' => 2, 'event' => ['path' => '/again'], 'context' => null], $this->decode($second));
+        self::assertSame(1, RecordingKernel::$builds);
+    }
+
+    public function testRawCallableGetsCommandInvocationsAsPlainEvents(): void
+    {
+        $event = $this->commandEvent('app:greet');
+
+        $response = $this->handler(['front_controller' => 'front-controllers/raw.php'])->invoke($event, []);
+
+        self::assertSame($event, $this->decode($response)['event']);
+    }
+
+    public function testFailedRawCallableBuildIsRetriedOnNextInvocation(): void
+    {
+        RecordingKernel::$failingBuilds = 1;
+        $handler = $this->handler(['front_controller' => 'front-controllers/raw.php', 'debug' => false]);
+
+        self::assertSame(500, $handler->invoke([], [])['statusCode']);
+        self::assertStringContainsString('Build failed on purpose.', $this->errorLog());
+        self::assertSame(202, $handler->invoke([], [])['statusCode']);
+        self::assertSame(2, RecordingKernel::$builds);
+    }
+
+    /**
+     * @return iterable<string, array{string, string}>
+     */
+    public static function failingRawCallables(): iterable
+    {
+        yield 'exception' => ['/throw', 'LogicException: Escaped on purpose.'];
+        yield 'non-int status' => ['/invalid', 'must return a Function Response'];
+        yield 'nested header value' => ['/bad-header', 'must return a Function Response'];
+        yield 'plain string' => ['/string', '"string" returned'];
+    }
+
+    #[DataProvider('failingRawCallables')]
+    public function testFailingRawCallableIsA500AndTheProcessKeepsServing(string $path, string $message): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/raw.php', 'debug' => false]);
+
+        self::assertSame([
+            'statusCode' => 500,
+            'headers' => ['Content-Type' => 'text/plain; charset=UTF-8'],
+            'body' => 'Internal Server Error',
+        ], $handler->invoke(['path' => $path], []));
+        self::assertStringContainsString($message, $this->errorLog());
+        self::assertSame(['calls' => 2], array_intersect_key($this->decode($handler->invoke([], [])), ['calls' => 0]));
+    }
+
     public function testFrontControllerMustReturnACallable(): void
     {
         $this->handler(['front_controller' => 'front-controllers/not-callable.php', 'debug' => false])->invoke([], []);

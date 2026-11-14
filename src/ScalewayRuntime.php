@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace JDecool\ScalewayRuntime;
 
+use JDecool\ScalewayRuntime\Runner\CallableRunner;
 use JDecool\ScalewayRuntime\Runner\ConsoleRunner;
 use JDecool\ScalewayRuntime\Runner\HttpKernelRunner;
 use JDecool\ScalewayRuntime\Runner\InvocationRunner;
@@ -35,6 +36,9 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  *
  * Command Invocations run through the Console Application of a Kernel, or of a Front Controller returning a
  * Console Application or a Command, which then answers any other Invocation with a 403.
+ *
+ * A Closure returned by the Front Controller closure is a raw callable, built once and reused like a Kernel:
+ * it gets every Event and context as they are, CRON Invocations included, and returns the Function Response.
  */
 class ScalewayRuntime extends SymfonyRuntime
 {
@@ -99,6 +103,12 @@ class ScalewayRuntime extends SymfonyRuntime
 
         [$app, $args] = $resolver->resolve();
         $application = $app(...$args);
+
+        // GenericRuntime would run a returned Closure as a script taking no arguments, which means nothing per
+        // Invocation; objects keep being dispatched on their type, so an invokable one is never taken for it.
+        if ($application instanceof \Closure) {
+            return new CallableRunner($application);
+        }
 
         if ($application instanceof Command) {
             $command = $application;

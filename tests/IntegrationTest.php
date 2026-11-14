@@ -121,6 +121,21 @@ final class IntegrationTest extends TestCase
         self::assertSame($first['pid'], $second['pid']);
     }
 
+    public function testRawCallableIsBuiltOnceAndGetsEveryEventUntouchedCronIncluded(): void
+    {
+        $cron = ['method' => 'POST', 'path' => '/', 'body' => '{"command":"app:count","secret":"cron-secret"}'];
+        $http = ['path' => '/state', 'method' => 'GET', 'headers' => ['Host' => 'internal.local'], 'isBase64Encoded' => false];
+
+        [$first, $second] = $this->invoke([$http, $cron], ['front_controller' => 'public/raw.php']);
+
+        self::assertSame(['Content-Type' => 'application/json'], $first['headers']);
+        $first = $this->json($first);
+        $second = $this->json($second);
+        self::assertSame(['event' => $http, 'calls' => 1], array_diff_key($first, ['pid' => 0]));
+        self::assertSame(['event' => $cron, 'calls' => 2], array_diff_key($second, ['pid' => 0]), 'A raw callable gets Command Invocations as they are.');
+        self::assertSame($first['pid'], $second['pid']);
+    }
+
     public function testRequestHandlerServesInvocationsThroughThePsr7Bridge(): void
     {
         [$first, $second] = $this->invoke([
