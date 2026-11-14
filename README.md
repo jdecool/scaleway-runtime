@@ -9,8 +9,8 @@ It also ships the tools to package the function and to run it locally.
 Vocabulary (Invocation, Event, Warm Process...) is defined in [GLOSSARY.md](GLOSSARY.md), design decisions in [docs/adr](docs/adr).
 
 > [!IMPORTANT]
-> The runtime has only been run locally, through the Emulator.
-> Several platform facts it relies on are still assumptions, see [Unverified platform facts](#unverified-platform-facts).
+> The platform facts the runtime relies on were measured on Scaleway with the [probe](probe), see [docs/probe-results.md](docs/probe-results.md).
+> The runtime itself has only run through the Emulator so far, and the package is not on Packagist yet.
 
 ## Contents
 
@@ -30,7 +30,7 @@ Vocabulary (Invocation, Event, Warm Process...) is defined in [GLOSSARY.md](GLOS
 
 - The Scaleway PHP runtimes `php84` or `php85` (PHP 8.4 or later).
 - Symfony 7.4 or 8.x components (`symfony/runtime`, `symfony/http-kernel`, `symfony/http-foundation`).
-- To build the deployment zip: the `zip` PHP extension and `composer` on the `PATH`.
+- To build the deployment zip: the `zip` PHP extension.
 - macOS or Linux for the packaging and Emulator tools (see [Windows](#windows)).
 
 ## Installation
@@ -97,6 +97,7 @@ Set these on the function, in production:
 | Variable | Kind | Why |
 | --- | --- | --- |
 | `APP_SECRET` | Secret | Symfony's `kernel.secret`, used to sign URLs, cookies and CSRF tokens. |
+| `SCALEWAY_HOST` | Plain | The public host of the function, for absolute URLs, see [Host](#host). |
 | `SCALEWAY_CRON_SECRET` | Secret | Only to run console commands from CRON triggers, see [Command Invocations](#command-invocations). |
 | `APP_ENV` | Plain | Only to run another env than `prod`, see below. |
 
@@ -109,13 +110,43 @@ The Emulator runs `dev` instead, unless it is started with an `APP_ENV`.
 For every other variable, real environment variables win over `.env` files, as usual with Symfony's Dotenv.
 `.env.local`, `.env.local.php` and `.env.*.local` are never shipped.
 
-### Writable directories
+### Host
 
-The deployed code may be read-only.
+No `Host` header reaches the function, so the runtime cannot know the domain it is called on.
+Every Request gets the host of the `host` runtime option, which defaults to the `SCALEWAY_HOST` environment variable, then to `localhost`:
+
+```sh
+SCALEWAY_HOST=api.example.com
+```
+
+The scheme comes from the platform's `X-Forwarded-Proto` (`https` for HTTP calls), the port is the scheme's default.
+Absolute URLs (`UrlGeneratorInterface::ABSOLUTE_URL`, signed URLs, redirects built from the Request) are only right once the host is set.
+Set it to the function's domain (its `domain_name` on Scaleway) or to its custom domain.
+With Terraform, a function cannot reference its own `domain_name` in its variables (the reference would be a cycle): use a custom domain, or set the variable after a first apply.
+
+### Cache and writable directories
+
+The code directory is writable on Scaleway, so the Kernel builds its cache in `var/cache` at the first Invocation of each Warm Process, which pays the container compilation once.
+To pay it at deploy time instead, warm the cache from a Composer script, which Scaleway runs after installing the dependencies:
+
+```json
+{
+    "scripts": {
+        "post-install-cmd": ["@php bin/console cache:warmup --env=prod"]
+    }
+}
+```
+
+Only do it when the warmup needs no secret: the function's environment variables are not available at deploy time, and a failing script does not fail the deployment, the first Invocation then building the cache as usual.
+
+> [!WARNING]
+> Symfony Flex's `auto-scripts` also run at deploy time, with the `APP_ENV` of the shipped `.env`, usually `dev`: `cache:clear` then fails silently, its dev bundles not being installed with `--no-dev`.
+> Make them env-explicit (`"cache:clear --env=prod": "symfony-cmd"`), or remove `cache:clear` from them and warm the cache as above.
+
 When the project's `var/` directory (or the project dir, without `var/`) is not writable, the runtime sets, unless your application already did:
 
-- `APP_BUILD_DIR` to `var/cache`, so the container warmed in the zip is used as is;
-- `APP_CACHE_DIR` to `<temp dir>/cache` and `APP_LOG_DIR` to `<temp dir>/log`.
+- `APP_CACHE_DIR` to `<temp dir>/cache` and `APP_LOG_DIR` to `<temp dir>/log`;
+- `APP_BUILD_DIR` to `var/cache`, only when `var/cache/<env>` holds a container warmed before, so that it is used as is.
 
 Kernels using `MicroKernelTrait` read these variables.
 Other Kernels must override `getCacheDir()`, `getBuildDir()` and `getLogDir()` themselves.
@@ -195,9 +226,9 @@ require_once dirname(__DIR__).'/vendor/autoload_runtime.php';
 return static fn (): RequestHandlerInterface => new ApiHandler();
 ```
 
-The PSR-7 request carries the client address, scheme, host and port resolved from the platform's `X-Forwarded-*` headers, in its URI and in the `REMOTE_ADDR`, `HTTPS`, `HTTP_HOST` and `SERVER_PORT` server params.
+The PSR-7 request carries the client address, scheme, host and port the runtime resolved (see [Client IP and trusted proxies](#client-ip-and-trusted-proxies)), in its URI and in the `REMOTE_ADDR`, `HTTPS`, `HTTP_HOST` and `SERVER_PORT` server params.
 A handler implementing `Symfony\Contracts\Service\ResetInterface` is reset before every Invocation but the first.
-A malformed `Host` or `X-Forwarded-Host` is answered with a 400 before reaching the handler.
+A malformed host is answered with a 400 before reaching the handler.
 
 ### Console Application or Command
 
@@ -253,7 +284,7 @@ An invokable object is not taken for a raw callable; return `$object(...)` to ma
 
 ### CRON triggers
 
-A CRON trigger is assumed to call the Application with a `POST /` whose JSON body holds the trigger's arguments: Scaleway does not document the CRON Event, and the [probe](probe) checks it.
+A CRON trigger calls the Application with a `POST /` whose JSON body holds the trigger's arguments, over plain `http` and without client address (`getClientIp()` is `127.0.0.1`).
 With a Kernel, handle it like any route:
 
 ```php
@@ -264,6 +295,8 @@ public function cron(Request $request): Response
     // ...
 }
 ```
+
+Any HTTP client can call `POST /` too: tell CRON Invocations apart with a secret of your own in the arguments, or run a command instead.
 
 ### Command Invocations
 
@@ -290,10 +323,14 @@ Services are reset around each command, so it shares no state with the Invocatio
 
 ### Security model
 
-Nothing known in an Event tells a CRON Invocation from an HTTP one, so any internet client can send a body naming a command to a public function.
-A body only becomes a Command Invocation when its `secret` matches `SCALEWAY_CRON_SECRET`, compared in constant time.
-Otherwise the body reaches the Application as a plain HTTP body on `POST /`, and a body carrying a wrong `secret` is logged (without its value).
-Without `SCALEWAY_CRON_SECRET`, or with an empty one, Command Invocations are off.
+A body only becomes a Command Invocation when both hold:
+
+- the Event carries neither `X-Real-Ip` nor `X-Envoy-External-Address`, which the platform sets on every HTTP call, overwriting what the client sends, and which CRON Events lack;
+- its `secret` matches `SCALEWAY_CRON_SECRET`, compared in constant time.
+
+Otherwise the body reaches the Application as a plain HTTP body on `POST /`, and a rejected body carrying a `secret` is logged (without its value).
+So no HTTP call can run a command, even with the secret, and without `SCALEWAY_CRON_SECRET`, or with an empty one, Command Invocations are off.
+The first check relies on undocumented platform behaviour, which is why the secret stays required.
 
 Keep in mind that:
 
@@ -308,38 +345,36 @@ See [ADR 0005](docs/adr/0005-authenticate-command-invocations-with-a-shared-secr
 vendor/bin/scaleway-package [function.zip]
 ```
 
-It builds the deployment zip in a private temporary directory, removed afterwards whatever happens:
+It zips your application as it is, `composer.json` and `composer.lock` included, but without `vendor/` nor `var/`: Scaleway runs `composer install --no-dev` from the shipped lock at deploy time, Composer scripts included, and replaces any shipped `vendor/` ([ADR 0008](docs/adr/0008-let-scaleway-install-the-dependencies.md)).
+Executable bits are kept, and symbolic links are followed: their target is zipped.
 
-1. It copies the application, without the excluded files below and without the zip being written.
-2. It runs `composer install --no-dev --classmap-authoritative` from the committed `composer.lock`, with `APP_ENV=prod` and `APP_DEBUG=0`.
-   Relative `path` repositories are resolved against your application, and mirrored instead of symlinked.
-3. It runs `bin/console cache:warmup`, when `bin/console` exists, to ship a warmed prod cache.
-4. It zips the result, keeping the executable bits, and the `composer.lock` exactly as committed.
+It refuses to build the zip, as Scaleway would install something else or fail without failing the deployment, when:
 
-It requires a committed `composer.lock`, for reproducible builds, and `handler.php`.
-Symbolic links are followed: their target is copied.
+- `handler.php` or `composer.lock` is missing;
+- `composer.lock` is not up to date with `composer.json`;
+- `composer.json` declares a `path` repository, or `composer.lock` installs a package from a local path: Scaleway cannot resolve them.
 
 | Shipped | Not shipped |
 | --- | --- |
-| Your code, `composer.json`, `composer.lock`, `handler.php` | `vendor/` and `var/` from your machine (rebuilt) |
-| `vendor/` without dev dependencies | `tests/`, `phpunit.xml(.dist)`, `.phpunit.cache`, `.phpunit.result.cache`, `.php-cs-fixer.cache` |
-| `var/cache/prod`, warmed | `.env.local`, `.env.local.php`, `.env.*.local` |
-| `.env`, `.env.prod`... as they are | `.git`, `.idea`, `.vscode`, `.DS_Store`, `node_modules` anywhere |
+| Your code, `composer.json`, `composer.lock`, `handler.php` | `vendor/` and `var/` (installed and built on the platform) |
+| `.env`, `.env.prod`... as they are | `tests/`, `phpunit.xml(.dist)`, `.phpunit.cache`, `.phpunit.result.cache`, `.php-cs-fixer.cache` |
+| | `.env.local`, `.env.local.php`, `.env.*.local` |
+| | `.git`, `.idea`, `.vscode`, `.DS_Store`, `node_modules` anywhere |
 | | `.terraform`, `*.tfstate`, `*.tfstate.*` anywhere (Terraform state holds secrets in clear) |
 
 The full list is `Packager::EXCLUDES` in [src/Packager.php](src/Packager.php).
-`--classmap-authoritative` means only classes known at build time can be autoloaded.
 
 Scaleway accepts zips up to 100 MiB, and up to 500 MiB of unzipped code ([limits](https://www.scaleway.com/en/docs/serverless-functions/reference-content/functions-limitations/)).
-`scaleway-package` warns when the zip exceeds either, but still writes it.
+`scaleway-package` warns when the zip or its content exceeds either, but still writes it.
 
 ## Deployment
 
-[example/terraform](example/terraform/main.tf) deploys the [example application](example) with its `php85` runtime, `handler.handle`, `APP_ENV=prod`, the `APP_SECRET` and `SCALEWAY_CRON_SECRET` secrets, a CRON trigger calling `POST /` and one running a command.
+[example/terraform](example/terraform/main.tf) deploys the [example application](example) with its `php85` runtime, `handler.handle`, `APP_ENV=prod`, the `APP_SECRET` and `SCALEWAY_CRON_SECRET` secrets, an optional `SCALEWAY_HOST`, a CRON trigger calling `POST /` and one running a command.
 Its [README](example/README.md#deploy-it) gives the commands.
-That Terraform code was written against the `scaleway/scaleway` provider v2.92 documentation and has never been applied.
+That Terraform code was written against the `scaleway/scaleway` provider v2.92 documentation and has never been applied; the [probe](probe/terraform/main.tf)'s, written the same way, has.
 
 Redeploy by running `scaleway-package` again, then `terraform apply`.
+Replacing a function, for instance to change its `runtime`, deletes its CRON triggers on Scaleway's side: give them a `lifecycle { replace_triggered_by = [scaleway_function.<name>.id] }`, as the example does, so the same apply recreates them.
 
 ## Local development with the Emulator
 
@@ -353,40 +388,44 @@ It sets `APP_ENV=dev` unless started with an `APP_ENV`, as the deployed function
 A crashed process is replaced by a fresh one, as Scaleway starts a new instance.
 
 PHP's built-in server receives the requests, and forwards the Events to that process over a Unix socket in a private temporary directory.
-The context passed to `handle()` is an empty array.
 
-The Event is built the way the platform is assumed to build it:
+The Event and the context are built the way the platform builds them ([measured](docs/probe-results.md)):
 
-- header names in `Title-Case`, repeated headers joined with `, `;
-- the client address appended to `X-Forwarded-For`, and `X-Forwarded-Proto: http`;
-- `queryStringParameters` as a map of strings, the last value of a repeated key winning;
-- bodies that are not valid UTF-8 base64-encoded, with `isBase64Encoded: true`.
+- the `httpMethod`, `queryStringParameters` (the last value of a repeated key winning, `[]` without query string) and other keys of the platform;
+- header names in `Title-Case`, repeated headers joined with `, `, no `Host`;
+- `X-Real-Ip`, `X-Envoy-External-Address`, `X-Request-Id` and `X-Forwarded-Proto: https` set whatever the client sends, the client's `X-Forwarded-For` kept in front of its address, its `X-Forwarded-Host` passed through;
+- empty, multipart and non UTF-8 bodies base64-encoded with `isBase64Encoded: true`, text bodies without the flag.
 
-Simulate a CRON trigger with a `POST /` carrying its arguments as JSON body:
+So the Requests are `https`, and their host is `localhost` unless you set `SCALEWAY_HOST`, as on the platform.
+
+No HTTP call can be a CRON Invocation, so the Emulator turns a `POST` on its reserved `/_scaleway/cron` path into a CRON Event whose arguments are the request body:
 
 ```sh
-curl -X POST http://127.0.0.1:8000/ -H 'Content-Type: application/json' --data '{"job": "cleanup"}'
+curl -X POST http://127.0.0.1:8000/_scaleway/cron --data '{"job": "cleanup"}'
 ```
 
 Simulate a Command Invocation by starting the Emulator with `SCALEWAY_CRON_SECRET` set, and sending the [Command Invocation body](#command-invocations) the same way:
 
 ```sh
 SCALEWAY_CRON_SECRET=local-secret vendor/bin/scaleway-serve
-curl -X POST http://127.0.0.1:8000/ --data '{"command": "app:greet", "args": {"name": "Scaleway"}, "secret": "local-secret"}'
+curl -X POST http://127.0.0.1:8000/_scaleway/cron --data '{"command": "app:greet", "args": {"name": "Scaleway"}, "secret": "local-secret"}'
 ```
 
-To run exactly what gets deployed, serve the packaged zip from a read-only copy, in `prod`:
+To run what gets deployed, install the zip the way Scaleway does, without the function's variables, then serve it in `prod`:
 
 ```sh
 vendor/bin/scaleway-package
-unzip -q function.zip -d /tmp/function && chmod -R a-w /tmp/function
+unzip -q function.zip -d /tmp/function
+composer install --working-dir=/tmp/function --no-dev
 APP_ENV=prod APP_SECRET=local php /tmp/function/vendor/bin/scaleway-serve
 ```
+
+The [example](example/README.md#run-it-locally)'s `e2e/deploy-locally.sh` does the same with the runtime of this repository.
 
 ## Warm Processes
 
 The Application is built once per Warm Process and reused by the following Invocations, like with FrankenPHP's worker mode or RoadRunner ([ADR 0002](docs/adr/0002-reuse-application-across-invocations.md)).
-If Scaleway does not keep processes warm, this degrades to one boot per Invocation.
+Scaleway keeps processes warm: consecutive Invocations of an instance run in the same PHP process.
 
 Between Invocations, for a Kernel:
 
@@ -408,56 +447,54 @@ Everything else survives, so your application must be safe for long-running exec
 - **Superglobals**: `$_GET`, `$_POST`, `$_COOKIE`, `$_FILES` and the request entries of `$_SERVER` (`REQUEST_URI`, `HTTP_*`...) are not populated per Invocation.
   Read the `Request` object instead; `Request::createFromGlobals()` does not describe the Invocation.
 - **Output**: only the returned `Response` reaches the client.
-  `echo` outside the Response, `header()` and `http_response_code()` do not.
-- **Query strings**: the Event carries `queryStringParameters` as a map, so a repeated key such as `a=1&a=2`, or `tags[]=a&tags[]=b`, likely reaches the Application with one value only.
+  `echo` outside the Response, `header()` and `http_response_code()` do not: Scaleway does not put stdout in the response body.
+- **Query strings**: the Event carries `queryStringParameters` as a map, so a repeated key such as `a=1&a=2`, or `tags[]=a&tags[]=b`, reaches the Application with its last value only.
   Keys are then parsed like PHP does, so `a.b` becomes `a_b` and `a[b]` nests.
 - **Form bodies**: `application/x-www-form-urlencoded` bodies are parsed for `POST`, `PUT`, `DELETE`, `PATCH` and `QUERY`, `multipart/form-data` only for `POST`, as PHP does.
   Uploaded files are `UploadedFile` objects in test mode: `move()` works, `is_uploaded_file()` does not.
 - **Cookies**: request cookie names are taken verbatim: unlike PHP's `$_COOKIE`, dots and spaces are not turned into underscores and `a[b]` does not nest.
 - **Streaming**: `StreamedResponse` and `BinaryFileResponse` are buffered into one Function Response; Server-Sent Events and long downloads are not possible.
-  Bodies that are not valid UTF-8 are sent base64-encoded.
+  Bodies that are not valid UTF-8 are sent base64-encoded, and decoded by the platform.
 - **PSR-15 responses** go through Symfony's `Response`, which adds `Cache-Control: no-cache, private` and `Date` when they are missing.
-- **HEAD requests**: only FrameworkBundle's `ResponseListener` strips the body of a `HEAD` response.
-  A bare `HttpKernelInterface`, a Response Front Controller or a PSR-15 handler returns the full body, unless it handles `HEAD` itself.
-- **Request size**: Scaleway documents a 6 MiB limit for request bodies.
+- **HEAD requests**: only FrameworkBundle's `ResponseListener` strips the body of a `HEAD` response, but the platform sends none anyway.
+- **Request size**: Scaleway rejects request bodies over 6 MiB with a `413`, before they reach the function.
+- **CORS**: Scaleway adds `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: Content-Type` to every response, whatever the Application sends.
+  Any website can therefore read the responses of a public function from a browser, though without the user's cookies: do not rely on the same-origin policy to protect them.
+- **Uncaught failures**: the runtime turns exceptions into a 500 itself, but a fatal error or `exit()` ends the Warm Process, and Scaleway answers a failed Invocation with a `500` whose body is `Error while executing function`.
 
 ### Client IP and trusted proxies
 
-The `Request` always sees `127.0.0.1` as its peer, standing for the platform proxy, which the runtime trusts for `X-Forwarded-For`, `-Host`, `-Port` and `-Proto`.
-If your application configures its own trusted proxies (`framework.trusted_proxies`), the runtime leaves them alone: include `127.0.0.1`, or `getClientIp()`, `getHost()` and `isSecure()` will ignore the platform's headers.
+The runtime trusts no proxy, as clients can forge most forwarding headers on Scaleway ([ADR 0007](docs/adr/0007-trust-only-headers-the-platform-overwrites.md)):
+
+| Request | From | Why |
+| --- | --- | --- |
+| `getClientIp()` | `X-Real-Ip`, `127.0.0.1` without it (CRON Invocations) | Set by the platform, whatever the client sends |
+| `isSecure()`, `getScheme()`, port | `X-Forwarded-Proto`, the scheme's default port | Set by the platform (`https`, `http` for CRON Invocations) |
+| `getHost()` | The [`host` option](#host) | No `Host` header reaches the function |
+
+`X-Forwarded-For` (the client's value is kept in front), `X-Forwarded-Host`, `X-Forwarded-Port` and `Forwarded` are passed through from the client: they reach the Application as plain headers, and nothing trusts them.
 
 > [!CAUTION]
-> Whether Scaleway overwrites, appends to or passes through the `X-Forwarded-*` headers a client sends is not verified yet.
-> If it passes them through, a client can choose the IP returned by `getClientIp()` and the host used to generate absolute URLs.
-> Do not rely on them for access control or rate limiting until the probe settles it.
+> Do not configure `framework.trusted_proxies`: the client is already resolved, and trusting `REMOTE_ADDR` or private ranges would make Symfony trust those forgeable headers again.
+> Trusted proxies your application configures still apply, as usual.
 
 ### Composer at deploy time
 
-Scaleway documents that it installs the dependencies of a shipped `composer.json` at deploy time.
-Whether it does so over the shipped `vendor/` is not verified: if it does, a `composer.lock` installing packages from a `path` repository outside the zip, as the example's does, likely fails the deployment.
+Scaleway runs `composer install --no-dev` in the function's directory when the zip holds a `composer.json` at its root, replacing any shipped `vendor/`.
+Every locked package must therefore be downloadable from Scaleway, and the function's environment variables are not available to Composer scripts.
+A failing install or script does not fail the deployment: the function becomes `ready` anyway, so check its first Invocations after a deploy.
 
 ### Windows
 
-`scaleway-serve` and `scaleway-package` rely on Unix sockets and `/dev/null`: they run on macOS and Linux, not on Windows outside WSL.
+`scaleway-serve` relies on Unix sockets: it runs on macOS and Linux, not on Windows outside WSL, and `scaleway-package` is only tested on macOS and Linux.
 Without the `pcntl` extension, stopping the Emulator with `kill` may leave its PHP processes running.
 
-### Unverified platform facts
+### Not measured
 
-The runtime and the Emulator rely on these, still unmeasured on Scaleway.
-The [probe function](probe) measures each of them; until its results are folded into this README, treat them as assumptions.
+The [probe](probe) settled every platform fact the runtime relies on ([results](docs/probe-results.md)), except:
 
-- The CRON Event shape: a `POST /` whose body is the trigger's arguments as JSON, and whether it carries a marker HTTP clients cannot forge.
-- That processes are kept warm between Invocations.
-- How `X-Forwarded-*` headers sent by clients are handled.
-- How repeated query keys are folded, and the case of header names.
-- That multi-value response headers (lists, as for several `Set-Cookie`) are sent as repeated headers.
-- When request bodies are base64-encoded, and the actual body size limit.
-- The Content-Type added to responses without one, and how binary responses are served.
-- The type and content of `$context`.
-- That plain and secret environment variables reach `$_SERVER`, where `APP_RUNTIME_OPTIONS`, `APP_ENV` and `APP_DEBUG` are read.
-- That the code directory is read-only and `/tmp` writable.
-- Whether Composer runs over the shipped `vendor/` at deploy time.
-- Where stdout, stderr and uncaught exceptions go.
+- where stdout, stderr and uncaught exceptions are logged (Cockpit);
+- whether a deployment whose Composer install or script fails serves the new code or keeps the previous version.
 
 ## Contributing
 
@@ -468,14 +505,15 @@ composer cs-fix  # applies the coding style
 ```
 
 CI runs `composer validate --strict` and `composer check` on PHP 8.4 and 8.5, each against Symfony 7.4 and 8.x, the whole Symfony stack being pinned through Flex's `SYMFONY_REQUIRE`.
-It also packages the [example application](example), serves its zip read-only in prod through the Emulator, and runs its [end-to-end scenarios](example/e2e/run.sh).
+It also runs the [end-to-end scenarios](example/e2e/run.sh) of the [example application](example) through the Emulator, in dev and on its zip installed like Scaleway does ([e2e/deploy-locally.sh](example/e2e/deploy-locally.sh)).
+The example installs the runtime of the checkout with `composer link-runtime`, see its [README](example/README.md#run-it-locally).
 
 The repository holds:
 
 - `src/`, `bin/`, `resources/`: the package;
-- `tests/`: PHPUnit tests, packaging included (it runs Composer, offline);
-- `example/`: a demo Symfony application consuming the package through a `path` repository, with Terraform code to deploy it;
-- `probe/`: a dependency-free function measuring the open platform facts;
+- `tests/`: PHPUnit tests, packaging included;
+- `example/`: a demo Symfony application requiring the package, with Terraform code to deploy it;
+- `probe/`: a dependency-free function measuring the platform facts, and its [results](docs/probe-results.md);
 - `docs/`: the [implementation plan](docs/plan.md) and the [ADRs](docs/adr).
 
 ## License

@@ -1,4 +1,4 @@
-# Deploys the probe function. Unvalidated: written against the scaleway provider docs (v2.92), never applied.
+# Deploys the probe function, applied on 2026-11-14 with the scaleway provider v2.92 (see docs/probe-results.md).
 # Credentials come from the usual SCW_ACCESS_KEY, SCW_SECRET_KEY and SCW_DEFAULT_PROJECT_ID variables.
 
 terraform {
@@ -70,6 +70,11 @@ resource "scaleway_function_cron" "probe" {
   name        = "probe-cron"
   schedule    = "*/5 * * * *"
   args        = jsonencode({ probe = "cron", nested = { list = [1, 2] } })
+
+  # Replacing the function (e.g. -var runtime=php84) deletes its CRON triggers server side: recreate them in the same apply.
+  lifecycle {
+    replace_triggered_by = [scaleway_function.probe.id]
+  }
 }
 
 output "endpoint" {

@@ -3,7 +3,8 @@
 A dependency-free PHP function that reports what Scaleway Serverless Functions pass to, and accept from, a PHP handler.
 Its answers settle the open questions of the [implementation plan](../docs/plan.md) before the runtime relies on them.
 
-The Terraform code is unvalidated: it was written against the `scaleway/scaleway` provider v2.92 documentation and never applied.
+It was run on 2026-11-14 on `php85` and `php84`: the results are in [docs/probe-results.md](../docs/probe-results.md), and the runtime follows them.
+Rerun it to check a platform change, and update that file.
 
 ## Deploy
 
@@ -16,7 +17,7 @@ terraform -chdir=probe/terraform apply
 export PROBE_URL=$(terraform -chdir=probe/terraform output -raw endpoint)
 ```
 
-To probe the PHP 8.4 runtime too, run `terraform -chdir=probe/terraform apply -var runtime=php84` afterwards: it replaces the function, so export `PROBE_URL` again and repeat the checks in a separate results directory.
+To probe the PHP 8.4 runtime too, run `terraform -chdir=probe/terraform apply -var runtime=php84` afterwards: it replaces the function, and its CRON trigger with it, so export `PROBE_URL` again and repeat the checks in a separate results directory.
 
 ## Run the checks
 
