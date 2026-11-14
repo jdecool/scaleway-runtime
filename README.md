@@ -21,6 +21,7 @@ Vocabulary (Invocation, Event, Warm Process...) is defined in [GLOSSARY.md](GLOS
 - [CRON triggers and Command Invocations](#cron-triggers-and-command-invocations)
 - [Packaging](#packaging)
 - [Deployment](#deployment)
+- [Logs](#logs)
 - [Local development with the Emulator](#local-development-with-the-emulator)
 - [Warm Processes](#warm-processes)
 - [Limitations and platform caveats](#limitations-and-platform-caveats)
@@ -155,7 +156,7 @@ Logs written to files are lost with the instance: send them to `php://stderr` in
 
 ### Errors
 
-An exception escaping the Application (a Kernel failing to boot, an unsupported Front Controller...) is logged to stderr and answered with a 500.
+An exception escaping the Application (a Kernel failing to boot, an unsupported Front Controller...) is logged to stderr ([Logs](#logs)) and answered with a 500.
 Its body is `Internal Server Error`, or the full exception when `APP_DEBUG` is true.
 A Kernel that failed to boot is built again from scratch on the next Invocation.
 
@@ -377,6 +378,39 @@ That Terraform code was written against the `scaleway/scaleway` provider v2.92 d
 Redeploy by running `scaleway-package` again, then `terraform apply`.
 Replacing a function, for instance to change its `runtime`, deletes its CRON triggers on Scaleway's side: give them a `lifecycle { replace_triggered_by = [scaleway_function.<name>.id] }`, as the example does, so the same apply recreates them.
 
+## Logs
+
+Scaleway sends what the function writes to stdout and stderr to [Cockpit](https://www.scaleway.com/en/docs/cockpit/), in the project's `Scaleway Logs` data source, about 2 seconds after it is written.
+The runtime logs its own failures to stderr, as Monolog does with a `php://stderr` handler.
+Each line is one log entry: a stack trace spans one entry per line, and a line over 16 KiB is split into 16 KiB entries and cut after 64 KiB.
+Every entry has the `debug` level, stderr ones included: filter on the `stream` field instead.
+An entry looks like this, with the `resource_id` label holding the function's UUID:
+
+```json
+{"message":"DEBUG - Invocation failed: RuntimeException: ... in /home/app/function/src/Kernel.php:12 source=user stream=stderr","stream":"stderr","resource_instance":"<namespace>-<function>-00001-deployment-<id>"}
+```
+
+In the console, open Cockpit's Grafana (`scw cockpit grafana get` prints its URL) and the `Serverless Functions Logs` dashboard, or Explore with the `Scaleway Logs` data source.
+
+From the command line, query Loki's HTTP API with a token that can only read logs:
+
+```sh
+LOKI_URL=$(scw cockpit data-source list origin=scaleway types.0=logs -o json | jq -r '.[0].url')
+FUNCTION_ID=$(scw function function list name=<function name> -o json | jq -r '.[0].id')
+# The secret key is only shown at creation.
+scw cockpit token create name=read-logs token-scopes.0=read_only_logs -o json > token.json
+LOKI_TOKEN=$(jq -r .secret_key token.json)
+
+curl -sS -G "$LOKI_URL/loki/api/v1/query_range" -H "Authorization: Bearer $LOKI_TOKEN" \
+  --data-urlencode "query={resource_id=\"$FUNCTION_ID\"} | json | stream=\"stderr\" | line_format \"{{.message}}\"" \
+  --data-urlencode since=1h --data-urlencode limit=1000 \
+  | jq -r '[.data.result[].values[]] | sort_by(.[0]) | .[][1]'
+
+scw cockpit token delete token-id=$(jq -r .id token.json) && rm token.json
+```
+
+Without the `stream="stderr"` filter, the query also returns stdout and the platform's own lines (`Function Triggered: /`, `Function is now ready to serve requests!`).
+
 ## Local development with the Emulator
 
 ```sh
@@ -493,10 +527,7 @@ Without the `pcntl` extension, stopping the Emulator with `kill` may leave its P
 
 ### Not measured
 
-The [probe](probe) settled every platform fact the runtime relies on ([results](docs/probe-results.md)), except:
-
-- where stdout, stderr and uncaught exceptions are logged (Cockpit);
-- whether a deployment whose Composer install or script fails serves the new code or keeps the previous version.
+The [probe](probe) settled every platform fact the runtime relies on ([results](docs/probe-results.md)), except whether a deployment whose Composer install or script fails serves the new code or keeps the previous version.
 
 ## Contributing
 

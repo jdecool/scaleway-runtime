@@ -60,6 +60,8 @@ done > 06-body-sizes.txt
 # 7. Output and failures: where does stdout go, what does an exception produce?
 curl -sS -i "$PROBE_URL/?mode=stdout" > 07-stdout.txt
 curl -sS -i "$PROBE_URL/?mode=exception" > 07-exception.txt
+# A multi-line exception and a long line (bytes, 65536 by default) written to stderr: how are they split in the logs?
+curl -sS -i "$PROBE_URL/?mode=stderr&bytes=65536" > 07-stderr.txt
 
 # 8. Other methods and HEAD.
 curl -sS -X PUT "$PROBE_URL/" --data 'put body' > 08-put.json
@@ -70,7 +72,7 @@ curl -sS -I "$PROBE_URL/" > 08-head.txt
 sleep 330; curl -sS "$PROBE_URL/?mode=history" > 09-history.ndjson
 ```
 
-10. In the Scaleway console, open the function's logs (Cockpit) and export the lines starting with `probe:` for the last hour, including the CRON ones, plus the `probe: written to stdout` and exception lines.
+10. Export the function's logs of the last hour, CRON lines included, from Cockpit's Grafana or with the Loki query of the [README](../README.md#logs).
 
 11. Compare a CRON Event (step 9 or 10) with the HTTP one of `01-facts.json`, `event` and `context` alike, and list what only the CRON one has or lacks: headers (a trigger name or id, a token, `User-Agent`, `X-Forwarded-For`), method, path, context fields.
     Then send each such header from a plain HTTP call, and check whether it reaches the Event as sent, is overwritten, or is removed: only a marker the platform sets itself can tell CRON Invocations from HTTP ones.

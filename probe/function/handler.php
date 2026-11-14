@@ -69,6 +69,15 @@ function handle($event, $context)
 
             return ['statusCode' => 200, 'headers' => ['Content-Type' => 'text/plain'], 'body' => "Is the stdout line in the logs or in this body?\n"];
 
+        case 'stderr':
+            // Written like the runtime logs its failures: does a multi-line exception stay one log entry?
+            $stderr = fopen('php://stderr', 'w');
+            fwrite($stderr, 'probe: written to stderr: '.new RuntimeException('probe: multi-line').PHP_EOL);
+            // Is a long line, like a whole stack trace on one line, kept or cut?
+            fwrite($stderr, 'probe: long line '.str_repeat('a', (int) ($query['bytes'] ?? 65536)).' end of the long line'.PHP_EOL);
+
+            return ['statusCode' => 200, 'headers' => ['Content-Type' => 'text/plain'], 'body' => "Check the stderr lines in the logs.\n"];
+
         case 'exception':
             throw new RuntimeException('probe: exception escaping the handler');
 

@@ -94,11 +94,30 @@ An `array`: `{"memoryLimitInMb": 256, "functionName": "probe-php85", "functionVe
 - `HEAD` responses carry `Content-Length` and no body.
 - The platform adds `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: Content-Type` to every response.
 
+## Logs
+
+Measured with the Loki HTTP API of the project's `Scaleway Logs` data source (`scw cockpit data-source list origin=scaleway types.0=logs`), with a `read_only_logs` Cockpit token sent as `Authorization: Bearer`; requests without it get `401`.
+
+- stdout and stderr written by the handler both reach Cockpit, `echo` and `error_log()` alike, as does a `php://stderr` stream opened with `fopen()` like the runtime's.
+- An entry is visible through the API 1.5 to 1.9 seconds after the Invocation (4 samples, polling every 0.5 to 1 second).
+- Labels: `resource_type="serverless_function"`, `service_name="serverless_function"`, `resource_id` (the function's UUID), `resource_name` (`<namespace name and suffix>-<function name>`, e.g. `scalewayruntimeprobekzb5ehst-probe-php85`), `project_id`, `project_name`, `region`, and `detected_level`.
+- Each entry is a JSON line; `stream` tells stdout from stderr, `resource_instance` the instance:
+
+```json
+{"message":"DEBUG - probe: written to stdout by the handler source=user stream=stdout","stream":"stdout","resource_instance":"scalewayruntimeprobekzb5ehst-probe-php85-00001-deployment-h4658"}
+{"message":"DEBUG - probe: exception escaping the handler source=user stream=stderr","stream":"stderr","resource_instance":"scalewayruntimeprobekzb5ehst-probe-php85-00001-deployment-h4658"}
+```
+
+- Everything the function writes is at the `DEBUG` level (`detected_level="debug"`), stderr included.
+- The platform logs its own lines with `source=core`: `Function is not ready to serve requests yet...` every second while an instance starts, `Function is now ready to serve requests!`, `Function Triggered: /` before each Invocation, and `INFO  - Forked function has terminated` when an instance stops.
+- Each line is a separate entry: a stack trace written in one `fwrite()` gave 29 entries, one per line, with consecutive timestamps.
+- A line over 16 KiB is split into entries of 16384 characters (counting the `DEBUG - ` prefix), and cut after 64 KiB: lines of 65536 and 300000 bytes both ended in 4 entries, the last one ending with `... (truncated, line too long)`; a 20000 byte line arrived complete, in 2 entries.
+- An uncaught exception logs its message only, on stderr (`probe: exception escaping the handler` above), without its class, file, line or trace; the Warm Process survives it (same pid, the counter went on).
+
 ## Terraform
 
 - Replacing a function (for example changing `runtime`) deletes its CRON triggers server side; Terraform recreates them only on the next apply.
 
 ## Not measured
 
-- Cockpit logs (where stdout and uncaught exceptions are logged).
 - Whether a deployment with a failing Composer script serves the new code or keeps the previous version.

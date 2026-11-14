@@ -56,4 +56,5 @@ Done on 2026-11-14: the repository is on GitHub with CI green, the package is on
 
 1. Verify a Command Invocation end to end on Scaleway: the e2e scenarios trigger CRON Invocations only through the Emulator, and the deployed one could only be observed in the logs.
 2. Run the example deployment with `host` set, to check absolute URLs.
-3. Measure what the probe left open: where logs go (Cockpit), and what a deployment with a failing Composer script serves.
+3. Measure what the probe left open: what a deployment with a failing Composer script serves.
+   Where logs go was measured on 2026-11-14 ([probe results](probe-results.md#logs)): the runtime's stderr lines reach Cockpit unchanged, one entry per line.
