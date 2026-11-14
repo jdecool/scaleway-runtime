@@ -21,7 +21,7 @@ The global `handle($event, $context)` function Scaleway calls for each Invocatio
 _Avoid_: Entry point, front controller
 
 **Front Controller**:
-The application's unchanged `public/index.php`, returning the closure that builds the Application.
+The application's unchanged entry script, `public/index.php` by default, returning the closure that builds the Application.
 _Avoid_: Handler, bootstrap
 
 **Application**:
