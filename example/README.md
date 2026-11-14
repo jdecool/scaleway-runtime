@@ -85,6 +85,6 @@ Against a deployment, `e2e/run.sh` skips the CRON scenarios, as only the platfor
 Check them in the [logs](../README.md#logs) instead, after the triggers ran (at minutes 0 and 30): each one leaves its line, the second showing that `app:greet` ran as a Command Invocation.
 
 ```
-DEBUG - [info] CRON Invocation received with the arguments job source=user stream=stderr
+DEBUG - [info] CRON Invocation received with the arguments ["job"] source=user stream=stderr
 DEBUG - [info] Command app:greet said: Hello CRON! source=user stream=stderr
 ```

@@ -83,13 +83,13 @@ Headers sent by the client:
 
 ## CRON Invocations
 
-Measured on 2026-11-14 with the [example](../example) and `jdecool/scaleway-runtime` v0.1.0 (`php85`), its two triggers set to every minute in a copy of its Terraform, with two more: the `app:greet` arguments with a wrong secret, and with `--fail`.
+Measured on 2026-11-14 on `php85` with the [example](../example), whose lock pins `jdecool/scaleway-runtime` at `dev-main` 2bca487 (v0.1.0 but for an Emulator fix), its two triggers set to every minute in a copy of its Terraform, with two more: the `app:greet` arguments with a wrong secret, and with `--fail`.
 For three minutes, each of the four triggers fired once a minute, 1 to 15 seconds past it, each Invocation preceded by `DEBUG - Function Triggered: / source=core`.
 Their stderr lines, without the `DEBUG - ` prefix and ` source=user stream=stderr` suffix:
 
 | Trigger arguments | Logged |
 | --- | --- |
-| `{"job": "hourly"}` | `[info] Matched route "app_demo_cron".`, then `[info] CRON Invocation received with the arguments job` |
+| `{"job": "hourly"}` | `[info] Matched route "app_demo_cron".`, then `[info] CRON Invocation received with the arguments ["job"]` |
 | `app:greet`, `{"name": "CRON"}`, the right secret | `[info] Command app:greet said: Hello CRON!` only: no route matched, no failure |
 | `app:greet`, a wrong secret | `Command Invocation rejected: the "secret" does not match SCALEWAY_CRON_SECRET, the body goes to the Application as a plain HTTP body.`, then the `POST /` lines |
 | `app:greet`, `{"--fail": true}`, the right secret | `[info] Command app:greet said: Hello world!`, then `Command "app:greet" failed with exit code 1: Hello world!` and one entry per line of the output, blank ones included |
