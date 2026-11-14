@@ -28,6 +28,13 @@ variable "app_secret" {
   sensitive = true
 }
 
+# The public host of the function, for absolute URLs: its own domain_name cannot be referenced here (a cycle),
+# so set it to a custom domain, or to the endpoint output after a first apply. Empty keeps the runtime's localhost.
+variable "host" {
+  type    = string
+  default = ""
+}
+
 # Lets CRON triggers run console commands; see docs/adr/0005-authenticate-command-invocations-with-a-shared-secret.md.
 variable "cron_secret" {
   type      = string
@@ -58,9 +65,7 @@ resource "scaleway_function" "example" {
   zip_hash     = filesha256(var.zip_file)
   deploy       = true
 
-  environment_variables = {
-    APP_ENV = "prod"
-  }
+  environment_variables = merge({ APP_ENV = "prod" }, var.host == "" ? {} : { SCALEWAY_HOST = var.host })
   secret_environment_variables = {
     APP_SECRET           = var.app_secret
     SCALEWAY_CRON_SECRET = var.cron_secret
@@ -73,6 +78,11 @@ resource "scaleway_function_cron" "example" {
   name        = "example-cron"
   schedule    = "0 * * * *"
   args        = jsonencode({ job = "hourly" })
+
+  # Replacing the function deletes its CRON triggers server side: recreate them in the same apply.
+  lifecycle {
+    replace_triggered_by = [scaleway_function.example.id]
+  }
 }
 
 # Runs the app:greet console command every hour: the matching secret turns the arguments into a Command Invocation.
@@ -81,6 +91,10 @@ resource "scaleway_function_cron" "example_command" {
   name        = "example-command"
   schedule    = "30 * * * *"
   args        = jsonencode({ command = "app:greet", args = { name = "CRON" }, secret = var.cron_secret })
+
+  lifecycle {
+    replace_triggered_by = [scaleway_function.example.id]
+  }
 }
 
 output "endpoint" {

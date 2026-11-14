@@ -46,6 +46,8 @@ jobs:
   example:
     name: Example application through the Emulator
     runs-on: ubuntu-latest
+    env:
+      SCALEWAY_CRON_SECRET: ci-cron-secret
     steps:
       - uses: actions/checkout@v7
 
@@ -55,25 +57,27 @@ jobs:
           coverage: none
           extensions: zip
 
-      - uses: ramsey/composer-install@v4
-        with:
-          working-directory: example
-
-      - name: Package
+      - name: Install with the runtime of this checkout
         working-directory: example
-        run: vendor/bin/scaleway-package
+        run: composer link-runtime
 
-      # Serves the zip as Scaleway would run it: extracted elsewhere, read-only, in prod.
-      - name: Serve the packaged function
+      - name: Serve in dev
         run: |
-          unzip -q example/function.zip -d "$RUNNER_TEMP/function"
-          chmod -R a-w "$RUNNER_TEMP/function"
-          APP_ENV=prod APP_SECRET=ci SCALEWAY_CRON_SECRET=ci-cron-secret php "$RUNNER_TEMP/function/vendor/bin/scaleway-serve" 127.0.0.1:8000 > "$RUNNER_TEMP/serve.log" 2>&1 &
+          (cd example && vendor/bin/scaleway-serve 127.0.0.1:8000 > "$RUNNER_TEMP/serve.log" 2>&1 &)
           timeout 10 bash -c 'until curl -sf http://127.0.0.1:8000/hello > /dev/null; do sleep 0.2; done'
 
-      - name: End-to-end scenarios
-        run: SCALEWAY_CRON_SECRET=ci-cron-secret example/e2e/run.sh http://127.0.0.1:8000
+      - name: End-to-end scenarios in dev
+        run: example/e2e/run.sh http://127.0.0.1:8000
 
-      - name: Emulator log
+      # Packages the example, installs the zip like Scaleway at deploy time and serves it in prod.
+      - name: Deploy locally
+        run: |
+          APP_SECRET=ci example/e2e/deploy-locally.sh 127.0.0.1:8001 > "$RUNNER_TEMP/deploy.log" 2>&1 &
+          timeout 300 bash -c 'until curl -sf http://127.0.0.1:8001/hello > /dev/null; do sleep 1; done'
+
+      - name: End-to-end scenarios on the deployed zip
+        run: example/e2e/run.sh http://127.0.0.1:8001
+
+      - name: Emulator logs
         if: always()
-        run: cat "$RUNNER_TEMP/serve.log"
+        run: cat "$RUNNER_TEMP/serve.log" "$RUNNER_TEMP/deploy.log"

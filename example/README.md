@@ -1,6 +1,6 @@
 # Example application
 
-A minimal Symfony application running on Scaleway Serverless Functions through `jdecool/scaleway-runtime`, which it installs from the parent directory with a Composer `path` repository.
+A minimal Symfony application running on Scaleway Serverless Functions through `jdecool/scaleway-runtime`, which it requires from Packagist.
 
 | Route | What it shows |
 | --- | --- |
@@ -12,16 +12,18 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 | `GET /counter` | A per-process invocation counter: it keeps growing while a Warm Process serves the Invocations |
 | `POST /` | Where CRON Invocations land, with the trigger's arguments as JSON body |
 
+Its `post-install-cmd` warms the prod cache when Scaleway installs the dependencies at deploy time, as the warmup needs no secret; without it, the first Invocation of each Warm Process builds the cache.
+
 The `app:greet` console command (`src/Command/GreetCommand.php`) runs as a Command Invocation: a `POST /` whose JSON body is `{"command": "app:greet", "args": {"name": "...", "--yell": true}, "secret": "..."}`, the secret matching the function's `SCALEWAY_CRON_SECRET`.
 Its `--fail` option shows how a failed command answers: a 500 with the command output.
-Without the secret, the same body is a plain HTTP body and lands on `POST /`.
+Over HTTP, even with the secret, the same body is a plain HTTP body and lands on `POST /`.
 `bin/console` works as a Front Controller too, for a function that only runs commands: `APP_RUNTIME_OPTIONS='{"front_controller":"bin/console"}'`.
 
 `public/hello.php` is a second, function-like Front Controller: a closure taking the `Request` and returning a `Response`, called for every Invocation without any Kernel.
 Select it with the `front_controller` runtime option, for instance `APP_RUNTIME_OPTIONS='{"front_controller":"public/hello.php"}' vendor/bin/scaleway-serve`, then `curl 'http://127.0.0.1:8000/?name=Scaleway'`.
 
 A Front Controller may also return a PSR-15 `RequestHandlerInterface`, built once and reused like the Kernel, once the application requires `symfony/psr-http-message-bridge` and `nyholm/psr7`.
-Its PSR-7 request sees the client, scheme and host resolved from the platform's `X-Forwarded-*` headers, in `getUri()` as in the `REMOTE_ADDR`, `HTTPS` and `HTTP_HOST` server params.
+Its PSR-7 request sees the client, scheme and host the runtime resolved, in `getUri()` as in the `REMOTE_ADDR`, `HTTPS` and `HTTP_HOST` server params.
 
 A Front Controller whose closure returns another `Closure` talks to Scaleway without any translation: that raw callable, built once and reused like the Kernel, receives every Event and context as they are, CRON Invocations included, and returns the Function Response itself.
 
@@ -35,28 +37,38 @@ return static fn (): Closure => static fn (array $event, mixed $context): array 
 
 ## Run it locally
 
+The package is not on Packagist yet, and the example works on the runtime of this checkout anyway: `composer link-runtime` installs it from the parent directory, through a `path` repository it adds to `composer.json`.
+Never commit that repository: `scaleway-package` refuses it, as Scaleway cannot resolve it.
+Until the first publication, the committed `composer.lock` is the one `link-runtime` writes; once the package is on Packagist, it is regenerated without the repository (`composer update jdecool/scaleway-runtime`) and committed, which makes the example deployable as is.
+
 ```sh
 cd example
-composer install
+composer link-runtime
 export SCALEWAY_CRON_SECRET=local-secret  # lets the Emulator and the scenarios run Command Invocations
 vendor/bin/scaleway-serve                 # the Emulator, on http://127.0.0.1:8000
 e2e/run.sh http://127.0.0.1:8000          # in another terminal, with the same SCALEWAY_CRON_SECRET
 ```
 
-To run exactly what gets deployed, serve the packaged zip from a read-only copy:
+A CRON trigger is simulated with a `POST` on the Emulator's `/_scaleway/cron`, whose body is the trigger's arguments:
 
 ```sh
-vendor/bin/scaleway-package
-unzip -q function.zip -d /tmp/function && chmod -R a-w /tmp/function
-APP_ENV=prod APP_SECRET=local SCALEWAY_CRON_SECRET=local-secret php /tmp/function/vendor/bin/scaleway-serve
+curl -X POST http://127.0.0.1:8000/_scaleway/cron --data '{"command": "app:greet", "args": {"name": "CRON"}, "secret": "local-secret"}'
 ```
+
+To run what Scaleway deploys, `e2e/deploy-locally.sh` packages a copy of the application, installs the zip with `composer install --no-dev` and without the function's variables, as Scaleway does, and serves it in prod, all in a temporary directory:
+
+```sh
+APP_SECRET=local SCALEWAY_CRON_SECRET=local-secret e2e/deploy-locally.sh 127.0.0.1:8001
+e2e/run.sh http://127.0.0.1:8001
+```
+
+It publishes the runtime of this checkout to that install in place of Packagist, through a Composer repository configured outside `composer.json`.
 
 ## Deploy it
 
+Deploying needs the package on Packagist and the lock regenerated against it, see above: until then, `scaleway-package` refuses the committed lock.
 The Terraform code is unvalidated: it was written against the `scaleway/scaleway` provider v2.92 documentation and never applied.
-Scaleway documents that it installs the dependencies of a shipped `composer.json` at deploy time.
-If it does so over the shipped `vendor/`, deploying this example likely fails: its `composer.lock` installs the runtime from `..`, which is not in the zip.
-The [probe](../probe) settles whether and how Composer runs.
+Set `host` to the function's domain (or a custom domain) for absolute URLs to be right; it cannot default to the function's own `domain_name`, so apply once, then again with `-var host=...`.
 
 ```sh
 cd example
@@ -70,3 +82,4 @@ terraform -chdir=terraform destroy
 ```
 
 Rerun `scaleway-package` and `terraform apply` to deploy a new version.
+Against a deployment, `e2e/run.sh` skips the CRON scenarios, as only the platform triggers CRON Invocations.
