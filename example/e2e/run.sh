@@ -123,14 +123,15 @@ expect "command without the CRON secret stays HTTP" "$status $(field forged args
 
 if [[ -n "${SCALEWAY_CRON_SECRET:-}" ]]; then
     # command_body <name> <args JSON>: the arguments a CRON trigger running a command carries.
+    # The secret goes through the environment and stdin, as command lines are visible to other local users.
     command_body() {
-        php -r 'echo json_encode(["command" => $argv[1], "args" => json_decode($argv[2]), "secret" => $argv[3]]);' "$1" "$2" "$SCALEWAY_CRON_SECRET"
+        php -r 'echo json_encode(["command" => $argv[1], "args" => json_decode($argv[2]), "secret" => getenv("SCALEWAY_CRON_SECRET")]);' "$1" "$2"
     }
-    status=$(request command -X POST --data "$(command_body app:greet '{"name":"Scaleway","--yell":true}')" "$base_url/")
+    status=$(command_body app:greet '{"name":"Scaleway","--yell":true}' | request command -X POST --data-binary @- "$base_url/")
     expect "Command Invocation status" "$status" 200
     expect "Command Invocation output" "$(cat "$tmp/command.body")" "HELLO SCALEWAY!"
 
-    status=$(request failed -X POST --data "$(command_body app:greet '{"--fail":true}')" "$base_url/")
+    status=$(command_body app:greet '{"--fail":true}' | request failed -X POST --data-binary @- "$base_url/")
     expect "failed command status" "$status" 500
     expect "failed command output" "$(grep -c 'Failing on purpose.' "$tmp/failed.body")" 1
 
