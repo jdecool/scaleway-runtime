@@ -14,16 +14,17 @@ Vocabulary follows [GLOSSARY.md](../GLOSSARY.md); decisions are recorded in [doc
 - A Front Controller returning a PSR-15 `RequestHandlerInterface` is built once like a Kernel and served through `symfony/psr-http-message-bridge` (suggested, with `nyholm/psr7`); the PSR-7 request carries the client resolved from the trusted `X-Forwarded-*` headers in its server params (`REMOTE_ADDR`, `HTTPS`, `HTTP_HOST`, `SERVER_PORT`) and URI; a handler implementing `ResetInterface` is reset before every Invocation but the first.
 - HTTP mapping: base64 bodies decoded on input; output marked `isBase64Encoded` when the body is not valid UTF-8; multi-value headers sent as arrays; streamed and binary file responses buffered; query string rebuilt from `queryStringParameters`; `X-Forwarded-*` trusted; platform limits documented.
 - Errors escaping the Application are logged to stderr and returned as a 500 Function Response (generic body, details when `APP_DEBUG=1`).
-- Cache is warmed at build time; cache and log dirs fall back to `/tmp` when the project dir is not writable; logs go to stderr.
+- Cache is warmed at build time; cache and log dirs fall back to `/tmp` when the project dir is not writable; the runtime logs its own errors to stderr, the application's logs are its own configuration.
 - `vendor/bin/scaleway-package` builds a zip with `vendor/` (`--no-dev --classmap-authoritative`, from `composer.lock`) and a warmed prod cache, excluding `var/`, `tests/`, `.env.local` (ADR 0003).
 - CRON Invocations become `POST /` HTTP requests by default; a JSON body `{"command": "...", "args": {...}, "secret": "..."}` whose secret matches `SCALEWAY_CRON_SECRET` makes it a Command Invocation run through the Console Application of the same Kernel, non-interactive, `args` mapped to an `ArrayInput`; the exit code 0 yields a 200 and any other a 500, both with the command output (ADR 0005).
 - A Front Controller returning a Console `Application` or a `Command` serves Command Invocations only and answers a 403 to the others; services are reset before and after each command, as no HTTP request follows to trigger the Kernel's own reset.
 - A Front Controller closure returning a `Closure` makes it a raw callable `fn (array $event, mixed $context): array`, built once like a Kernel (GenericRuntime would run it as a zero-argument script, meaningless per Invocation; invokable objects keep their type-based dispatch, a `$object(...)` turns one into a raw callable); it gets every Event and context untouched, CRON Invocations included without Command Invocation routing (raw means raw), and its return value must be the documented Function Response shape (int `statusCode`, optional `headers` of strings or lists of strings, string `body`, optional bool `isBase64Encoded`), undocumented keys dropped, anything else being a 500.
-- Tests: PHPUnit on conversions, GitHub Actions CI (PHPUnit, PHPStan max, PHP-CS-Fixer; PHP 8.4/8.5 x Symfony 7.4/8.x), local Emulator `vendor/bin/scaleway-serve`, manual real E2E deployed with Terraform.
+- Tests: PHPUnit on conversions, runners and packaging (offline, from path repositories), GitHub Actions CI (PHPUnit, PHPStan max, PHP-CS-Fixer; PHP 8.4/8.5 x Symfony 7.4/8.x), local Emulator `vendor/bin/scaleway-serve`, manual real E2E deployed with Terraform.
 
 ## Phases
 
 Each phase ends with green CI checks locally, a commit series, and an independent code review whose findings are addressed before the next phase.
+Phases 1 to 8 are done; what remains is listed under [Remaining work](#remaining-work).
 
 1. **Bootstrap**: `composer.json`, directory layout, PHPUnit, PHPStan (max), PHP-CS-Fixer, GitHub Actions matrix, `.gitignore`, `LICENSE`, minimal `README.md`.
 2. **HttpKernel Application**: `ScalewayRuntime`, Handler bootstrap, Event to `Request` and `Response` to Function Response conversions, runner, reset between Invocations, boot retry, error handling, `front_controller` option, writable dir fallback.
@@ -32,4 +33,26 @@ Each phase ends with green CI checks locally, a commit series, and an independen
 5. **PSR-15 Application**: `RequestHandlerInterface` via `symfony/psr-http-message-bridge` and `nyholm/psr7` (suggested dependencies).
 6. **Console Application and CRON routing**: Command Invocations, Console `Application` / `Command` Front Controllers.
 7. **Raw callable Application**: `fn(array $event, mixed $context): array`.
-8. **Documentation**: full README (install, configure, deploy, limitations), probe results folded into the docs.
+8. **Documentation**: full README (install, configure, deploy, limitations), packaging tests; folding the probe results in is left for after the probe is deployed.
+
+## Deviations from the original plan
+
+Recorded per phase; the settled design above already reflects them.
+
+- **Phase 2**: runners implement an own `InvocationRunner::invoke($event, $context): array`, as Symfony's `RunnerInterface::run(): int` has no room for an Event nor a Function Response; `extra.runtime.class` and `APP_RUNTIME` are ignored (ADR 0001).
+- **Phase 3**: the Emulator is PHP's built-in server with a router forwarding each Event to a separate Warm Process over a Unix socket in a private temp dir, as the built-in server wipes all PHP state after each request; a crashed Warm Process is replaced.
+- **Phase 3**: `scaleway-package` requires a committed `composer.lock` and installs with `--classmap-authoritative` instead of `-o`; relative `path` repositories are made absolute in the lock for the install only, the zip shipping it as committed; the build runs in a private temp dir, as it holds the `.env` files (ADR 0003).
+- **Phase 4**: a Front Controller returning a Response is called for every Invocation rather than once per process, a `Request` argument receiving the Invocation's Request (ADR 0004).
+- **Phase 6**: the Command Invocation body carries the CRON Secret, matched against `SCALEWAY_CRON_SECRET`, as nothing known tells a CRON Invocation from an HTTP one (ADR 0005); Front Controllers returning a Console `Application` or a `Command` serve Command Invocations only, and answer a 403 to the others.
+- **Phase 7**: the raw callable is a `Closure` returned by the Front Controller closure, not any callable, and must return the documented Function Response shape, undocumented keys being dropped.
+
+## Remaining work
+
+1. Deploy the [probe](../probe) on `php85` and `php84`, and collect the results its README asks for.
+2. Fold the results in:
+   - the README's unverified platform facts, client IP and Composer sections;
+   - the Emulator's Event shape (`Emulator::toEvent()`): header case, repeated query keys, `X-Forwarded-*`, base64 bodies, context;
+   - `HttpConverter`: trusted `X-Forwarded-*` headers, multi-value response headers;
+   - `CommandInvocation::fromEvent()` and ADR 0005, if CRON Events carry a marker HTTP clients cannot forge;
+   - ADR 0003 and `scaleway-package`, depending on whether Composer runs over the shipped `vendor/`.
+3. Apply the example's Terraform, never applied so far, and run `example/e2e/run.sh` against the deployment.
