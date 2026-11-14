@@ -31,8 +31,7 @@ while (false !== $connection = @stream_socket_accept($server, -1)) {
         if (!is_array($event)) {
             throw new UnexpectedValueException('The Event must be a JSON object.');
         }
-        // Scaleway's context shape is not documented; the probe function records it.
-        $response = handle($event, []);
+        $response = handle($event, JDecool\ScalewayRuntime\Emulator::CONTEXT);
         fwrite($connection, json_encode($response, \JSON_THROW_ON_ERROR));
     } catch (Throwable $e) {
         // Scaleway would fail the Invocation too, e.g. for a Function Response that is not JSON-encodable.

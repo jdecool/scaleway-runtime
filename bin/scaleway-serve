@@ -10,6 +10,7 @@ require $autoload;
 
 if (in_array($argv[1] ?? null, ['-h', '--help'], true)) {
     echo 'Usage: scaleway-serve [<host>:<port>]  (default: 127.0.0.1:8000)', \PHP_EOL;
+    echo 'A POST on '.JDecool\ScalewayRuntime\Emulator::CRON_PATH.' is a CRON Invocation whose arguments are the request body.', \PHP_EOL;
     exit(0);
 }
 
@@ -83,7 +84,7 @@ if (function_exists('pcntl_async_signals')) {
         });
     }
 }
-fwrite(\STDERR, "Emulator listening on http://{$address}, Warm Process pid ".proc_get_status($warmProcess)['pid'].\PHP_EOL);
+fwrite(\STDERR, "Emulator listening on http://{$address}, Warm Process pid ".proc_get_status($warmProcess)['pid'].', CRON triggers on POST '.JDecool\ScalewayRuntime\Emulator::CRON_PATH.\PHP_EOL);
 
 while (($status = proc_get_status($server))['running']) {
     // A dead Warm Process is replaced, as the platform starts a new instance after a crash.

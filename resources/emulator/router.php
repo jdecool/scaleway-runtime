@@ -18,14 +18,11 @@ foreach (getallheaders() as $name => $value) {
         $headers[(string) $name] = $value;
     }
 }
-$event = Emulator::toEvent(
-    $server('REQUEST_METHOD'),
-    $server('REQUEST_URI'),
-    $headers,
-    // Raw even for form posts, as the server runs with enable_post_data_reading=0.
-    (string) file_get_contents('php://input'),
-    $server('REMOTE_ADDR'),
-);
+// Raw even for form posts, as the server runs with enable_post_data_reading=0.
+$body = (string) file_get_contents('php://input');
+$event = 'POST' === $server('REQUEST_METHOD') && Emulator::CRON_PATH === parse_url($server('REQUEST_URI'), \PHP_URL_PATH)
+    ? Emulator::toCronEvent($body)
+    : Emulator::toEvent($server('REQUEST_METHOD'), $server('REQUEST_URI'), $headers, $body, $server('REMOTE_ADDR'));
 
 $response = null;
 $connection = @stream_socket_client((string) getenv('SCALEWAY_EMULATOR_SOCKET'), $errorCode, $errorMessage);

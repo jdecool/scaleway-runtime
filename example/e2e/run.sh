@@ -69,6 +69,12 @@ status=$(request headers -H 'X-Custom: hello' -H 'Accept-Language: fr' --cookie 
 expect "custom request header" "$(field headers headers.x-custom)" hello
 expect "cookies" "$(field headers cookies)" '{"flavor":"chocolate","size":"large"}'
 expect "client IP is set" "$(field headers clientIp | grep -cE '^[0-9a-f.:]+$')" 1
+expect "HTTPS, as the platform terminates TLS" "$(field headers secure)" true
+
+# Clients can forge these, so the Application must not trust them.
+status=$(request forwarded -H 'X-Forwarded-For: 203.0.113.66' -H 'X-Forwarded-Host: spoofed.example' -H 'X-Real-Ip: 203.0.113.66' "$base_url/echo")
+expect "forged X-Forwarded-Host ignored" "$(field forwarded uri | grep -c spoofed.example)" 0
+expect "forged client IP ignored" "$(field forwarded clientIp | grep -c 203.0.113.66)" 0
 
 status=$(request json -X POST -H 'Content-Type: application/json' --data '{"answer":42}' "$base_url/echo")
 expect "POST JSON body" "$(field json body)" '{"answer":42}'
@@ -112,33 +118,46 @@ fi
 status=$(request missing "$base_url/missing")
 expect "unknown route" "$status" 404
 
-# How a CRON trigger calls the function: a POST on "/" with its arguments as JSON body.
-status=$(request cron -X POST -H 'Content-Type: application/json' --data '{"job":"cleanup"}' "$base_url/")
-expect "CRON-like Invocation" "$(field cron args.job)" cleanup
+status=$(request postroot -X POST -H 'Content-Type: application/json' --data '{"job":"cleanup"}' "$base_url/")
+expect "POST / JSON body" "$(field postroot args.job)" cleanup
 
-# A body naming a command runs nothing without the CRON secret: it is a plain HTTP body.
+# A body naming a command runs nothing over HTTP: it is a plain HTTP body.
 status=$(request forged -X POST -H 'Content-Type: application/json' \
     --data '{"command":"app:greet","args":{"name":"Mallory"},"secret":"guess"}' "$base_url/")
 expect "command without the CRON secret stays HTTP" "$status $(field forged args.command)" "200 app:greet"
 
+# command_body <name> <args JSON>: the arguments a CRON trigger running a command carries.
+# The secret goes through the environment and stdin, as command lines are visible to other local users.
+command_body() {
+    php -r 'echo json_encode(["command" => $argv[1], "args" => json_decode($argv[2]), "secret" => getenv("SCALEWAY_CRON_SECRET")]);' "$1" "$2"
+}
+
 if [[ -n "${SCALEWAY_CRON_SECRET:-}" ]]; then
-    # command_body <name> <args JSON>: the arguments a CRON trigger running a command carries.
-    # The secret goes through the environment and stdin, as command lines are visible to other local users.
-    command_body() {
-        php -r 'echo json_encode(["command" => $argv[1], "args" => json_decode($argv[2]), "secret" => getenv("SCALEWAY_CRON_SECRET")]);' "$1" "$2"
-    }
-    status=$(command_body app:greet '{"name":"Scaleway","--yell":true}' | request command -X POST --data-binary @- "$base_url/")
-    expect "Command Invocation status" "$status" 200
-    expect "Command Invocation output" "$(cat "$tmp/command.body")" "HELLO SCALEWAY!"
+    status=$(command_body app:greet '{"name":"Mallory"}' | request leaked -X POST -H 'Content-Type: application/json' --data-binary @- "$base_url/")
+    expect "command with the CRON secret stays HTTP over HTTP" "$status $(field leaked args.command)" "200 app:greet"
+fi
 
-    status=$(command_body app:greet '{"--fail":true}' | request failed -X POST --data-binary @- "$base_url/")
-    expect "failed command status" "$status" 500
-    expect "failed command output" "$(grep -c 'Failing on purpose.' "$tmp/failed.body")" 1
-
-    request after "$base_url/hello?name=again" > /dev/null
-    expect "HTTP Invocation after commands" "$(field after message)" "Hello again!"
+# Only the Emulator can trigger a CRON Invocation on demand, on its reserved path.
+status=$(request cron -X POST --data '{"job":"cleanup"}' "$base_url/_scaleway/cron")
+if [[ "$status" == 404 ]]; then
+    echo "skip CRON Invocations: only the Emulator triggers them on demand"
 else
-    echo "skip Command Invocations: set SCALEWAY_CRON_SECRET to the function's"
+    expect "CRON Invocation lands on POST /" "$status $(field cron args.job)" "200 cleanup"
+
+    if [[ -n "${SCALEWAY_CRON_SECRET:-}" ]]; then
+        status=$(command_body app:greet '{"name":"Scaleway","--yell":true}' | request command -X POST --data-binary @- "$base_url/_scaleway/cron")
+        expect "Command Invocation status" "$status" 200
+        expect "Command Invocation output" "$(cat "$tmp/command.body")" "HELLO SCALEWAY!"
+
+        status=$(command_body app:greet '{"--fail":true}' | request failed -X POST --data-binary @- "$base_url/_scaleway/cron")
+        expect "failed command status" "$status" 500
+        expect "failed command output" "$(grep -c 'Failing on purpose.' "$tmp/failed.body")" 1
+
+        request after "$base_url/hello?name=again" > /dev/null
+        expect "HTTP Invocation after commands" "$(field after message)" "Hello again!"
+    else
+        echo "skip Command Invocations: set SCALEWAY_CRON_SECRET to the function's"
+    fi
 fi
 
 if ((failures > 0)); then
