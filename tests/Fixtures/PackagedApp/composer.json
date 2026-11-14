@@ -1,0 +1,22 @@
+{
+    "name": "acme/packaged-app",
+    "description": "An application packaged without any network access",
+    "type": "project",
+    "require": {
+        "acme/lib": "^1.0"
+    },
+    "repositories": [
+        {
+            "type": "package",
+            "package": {
+                "name": "acme/lib",
+                "version": "1.0.0",
+                "dist": {"type": "zip", "url": "https://example.test/acme-lib-1.0.0.zip"}
+            }
+        },
+        {"packagist.org": false}
+    ],
+    "config": {
+        "platform": {"php": "8.4.0"}
+    }
+}

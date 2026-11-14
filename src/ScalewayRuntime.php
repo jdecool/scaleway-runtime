@@ -30,9 +30,9 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  *
  * Unlike SymfonyRuntime, it defaults the env to prod when the process environment sets none, whatever .env files say.
  *
- * When the project's var/ directory is not writable (the deployed code may be read-only),
- * the cache and log dirs move to the system temp dir through APP_CACHE_DIR and APP_LOG_DIR,
- * while APP_BUILD_DIR keeps the container warmed at build time.
+ * The cache is built at the first Invocation of each Warm Process, unless the application warmed it at deploy time.
+ * When the project's var/ directory is not writable, the cache and log dirs move to the system temp dir through
+ * APP_CACHE_DIR and APP_LOG_DIR, while APP_BUILD_DIR keeps a container already warmed in var/cache.
  *
  * A Front Controller closure returning a Response is called again for every Invocation, and one
  * taking a Request gets the Invocation's Request (see docs/adr/0004-call-response-front-controllers-per-invocation.md).
@@ -72,8 +72,12 @@ class ScalewayRuntime extends SymfonyRuntime
 
         $projectDir = $this->options['project_dir'] ?? null;
         if (\is_string($projectDir) && !is_writable(is_dir($projectDir.'/var') ? $projectDir.'/var' : $projectDir)) {
-            // Kernels using MicroKernelTrait read these from $_SERVER only; values set by the app win.
-            $_SERVER['APP_BUILD_DIR'] ??= $projectDir.'/var/cache';
+            // Kernels using MicroKernelTrait read these from $_SERVER only; values set by the app win. A container
+            // warmed before the code went read-only is kept, otherwise it is built in the temp dir like the cache.
+            $env = $this->options['env'] ?? null;
+            if (\is_string($env) && is_dir($projectDir.'/var/cache/'.$env)) {
+                $_SERVER['APP_BUILD_DIR'] ??= $projectDir.'/var/cache';
+            }
             $_SERVER['APP_CACHE_DIR'] ??= sys_get_temp_dir().'/cache';
             $_SERVER['APP_LOG_DIR'] ??= sys_get_temp_dir().'/log';
         }

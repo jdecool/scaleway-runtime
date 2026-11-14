@@ -14,15 +14,19 @@ final class PackagerTest extends TestCase
     private Filesystem $filesystem;
     private string $dir;
     private string $appDir;
+    /** @var resource */
+    private $log;
 
     protected function setUp(): void
     {
         $this->filesystem = new Filesystem();
-        // Real paths, as bin/scaleway-package passes and as the build dir reports them (macOS /var is a symlink).
+        // Real paths, as bin/scaleway-package passes them (macOS /var is a symlink).
         $this->dir = (string) realpath(sys_get_temp_dir()).'/scaleway-runtime-'.bin2hex(random_bytes(4));
-        $this->appDir = $this->dir.'/project/app';
-        $this->filesystem->mirror(__DIR__.'/Fixtures/PackagedApp', $this->dir.'/project');
-        $this->filesystem->mkdir($this->dir.'/tmp');
+        $this->appDir = $this->dir.'/app';
+        $this->filesystem->mirror(__DIR__.'/Fixtures/PackagedApp', $this->appDir);
+        $log = fopen('php://memory', 'w+');
+        self::assertNotFalse($log);
+        $this->log = $log;
     }
 
     protected function tearDown(): void
@@ -57,29 +61,10 @@ final class PackagerTest extends TestCase
         self::assertFalse(Packager::isExcluded($path));
     }
 
-    public function testRelativePathRepositoriesAreResolvedAgainstTheApplication(): void
-    {
-        $lock = [
-            'packages' => [
-                ['name' => 'acme/local', 'dist' => ['type' => 'path', 'url' => '../lib']],
-                ['name' => 'acme/absolute', 'dist' => ['type' => 'path', 'url' => '/opt/lib']],
-                ['name' => 'acme/remote', 'dist' => ['type' => 'zip', 'url' => 'https://example.test/a.zip']],
-            ],
-            'packages-dev' => [['name' => 'acme/dev', 'dist' => ['type' => 'path', 'url' => 'packages/dev']]],
-            'content-hash' => 'abc',
-        ];
-
-        $expected = $lock;
-        $expected['packages'][0]['dist']['url'] = '/srv/app/../lib';
-        $expected['packages-dev'][0]['dist']['url'] = '/srv/app/packages/dev';
-
-        self::assertSame($expected, Packager::resolvePathRepositories($lock, '/srv/app'));
-    }
-
-    public function testZipShipsTheApplicationWithProductionDependenciesAndTheCommittedLock(): void
+    public function testZipShipsTheSourcesAndComposerFilesWithoutVendorNorVar(): void
     {
         $this->filesystem->dumpFile($this->appDir.'/var/cache/prod/stale.php', '');
-        $this->filesystem->dumpFile($this->appDir.'/vendor/stale.php', '');
+        $this->filesystem->dumpFile($this->appDir.'/vendor/autoload.php', '');
         $this->filesystem->dumpFile($this->appDir.'/tests/ServiceTest.php', '');
         $this->filesystem->dumpFile($this->appDir.'/.env.local', 'APP_SECRET=local');
         $this->filesystem->dumpFile($this->appDir.'/.git/HEAD', '');
@@ -87,126 +72,100 @@ final class PackagerTest extends TestCase
         $this->filesystem->dumpFile($this->appDir.'/terraform/terraform.tfstate', '{}');
         // A previous build, in the application like the default "function.zip": it must not end up in itself.
         $this->filesystem->dumpFile($this->appDir.'/function.zip', 'stale');
-        $lock = (string) file_get_contents($this->appDir.'/composer.lock');
 
-        [$exitCode, $log] = $this->package($this->appDir.'/function.zip');
+        new Packager($this->appDir, $this->log)->package($this->appDir.'/function.zip');
 
-        self::assertSame(0, $exitCode, $log);
         $zip = new \ZipArchive();
         self::assertTrue($zip->open($this->appDir.'/function.zip'));
         $names = [];
         for ($i = 0; $i < $zip->numFiles; ++$i) {
             $names[] = (string) $zip->getNameIndex($i);
         }
-        $shipped = array_values(array_filter($names, static fn (string $name): bool => !str_starts_with($name, 'vendor/composer/')));
-        sort($shipped);
-        self::assertSame([
-            '.env',
-            'bin/console',
-            'composer.json',
-            'composer.lock',
-            'handler.php',
-            'src/Service.php',
-            'vendor/acme/lib/composer.json',
-            'vendor/autoload.php',
-        ], $shipped);
-        // Relative "../lib" did not resolve from the build dir, yet the zip ships the lock exactly as committed.
-        self::assertSame($lock, $zip->getFromName('composer.lock'));
-        self::assertSame($lock, file_get_contents($this->appDir.'/composer.lock'));
+        sort($names);
+        self::assertSame(['.env', 'bin/console', 'composer.json', 'composer.lock', 'handler.php', 'src/Service.php'], $names);
+        self::assertSame(file_get_contents($this->appDir.'/composer.lock'), $zip->getFromName('composer.lock'));
         self::assertTrue($zip->getExternalAttributesName('bin/console', $system, $attributes));
         self::assertIsInt($attributes);
         self::assertSame(0o755, ($attributes >> 16) & 0o777);
         $zip->close();
-
-        $record = $this->record();
-        self::assertSame(['cache:warmup', '--no-interaction'], $record['argv']);
-        self::assertSame('prod', $record['appEnv']);
-        self::assertSame($lock, $record['lock']);
     }
 
-    public function testBuildDirIsPrivateAndRemovedAfterwards(): void
+    public function testContentHashIsComposers(): void
     {
-        [$exitCode, $log] = $this->package($this->dir.'/function.zip');
+        $composer = json_decode((string) file_get_contents(__DIR__.'/Fixtures/PackagedApp/composer.json'), true);
+        $lock = json_decode((string) file_get_contents(__DIR__.'/Fixtures/PackagedApp/composer.lock'), true);
+        self::assertIsArray($composer);
+        self::assertIsArray($lock);
 
-        self::assertSame(0, $exitCode, $log);
-        $record = $this->record();
-        self::assertIsString($record['buildDir']);
-        self::assertStringStartsWith($this->dir.'/tmp/scaleway-package-', $record['buildDir']);
-        self::assertSame(0o700, $record['perms']);
-        self::assertSame([], $this->leftovers());
-    }
-
-    public function testFailedBuildLeavesNeitherBuildDirNorZip(): void
-    {
-        [$exitCode, $log] = $this->package($this->dir.'/function.zip', ['PACKAGER_TEST_FAIL' => '1']);
-
-        self::assertNotSame(0, $exitCode);
-        self::assertStringContainsString('cache:warmup --no-interaction" failed with exit code 1', $log);
-        self::assertFileDoesNotExist($this->dir.'/function.zip');
-        self::assertSame([], $this->leftovers());
+        // The fixture lock was written by Composer itself.
+        self::assertSame($lock['content-hash'], Packager::contentHash($composer));
     }
 
     public function testApplicationWithoutCommittedLockIsRefused(): void
     {
         $this->filesystem->remove($this->appDir.'/composer.lock');
-        $log = fopen('php://memory', 'w');
-        \assert(false !== $log);
 
         $this->expectExceptionMessage('"composer.lock" is missing');
-        new Packager($this->appDir, $log)->package($this->dir.'/function.zip');
+        $this->package();
+    }
+
+    public function testLockOutOfSyncWithComposerJsonIsRefused(): void
+    {
+        $this->editComposerJson(static fn (array $composer): array => ['require' => ['acme/lib' => '^2.0']] + $composer);
+
+        $this->expectExceptionMessage('composer.lock is not up to date with composer.json');
+        $this->package();
+    }
+
+    public function testPathRepositoryIsRefused(): void
+    {
+        // As "composer config repositories.local path .." writes it.
+        $this->editComposerJson(static fn (array $composer): array => ['repositories' => ['local' => ['type' => 'path', 'url' => '..']]] + $composer);
+
+        $this->expectExceptionMessage('composer.json declares the "path" repository ".."');
+        $this->package();
+    }
+
+    #[TestWith(['packages'])]
+    #[TestWith(['packages-dev'])]
+    public function testPackageInstalledFromAPathIsRefused(string $section): void
+    {
+        $lock = json_decode((string) file_get_contents($this->appDir.'/composer.lock'), true);
+        self::assertIsArray($lock);
+        $packages = \is_array($lock[$section] ?? null) ? $lock[$section] : [];
+        $packages[] = ['name' => 'acme/local', 'version' => 'dev-main', 'dist' => ['type' => 'path', 'url' => '../local']];
+        $lock[$section] = $packages;
+        $this->filesystem->dumpFile($this->appDir.'/composer.lock', (string) json_encode($lock));
+
+        $this->expectExceptionMessage('composer.lock installs "acme/local" from a local path');
+        $this->package();
+    }
+
+    public function testRefusedApplicationLeavesNoZip(): void
+    {
+        $this->filesystem->remove($this->appDir.'/handler.php');
+
+        try {
+            $this->package();
+            self::fail('The application must be refused.');
+        } catch (\RuntimeException $e) {
+            self::assertStringContainsString('"handler.php" is missing', $e->getMessage());
+        }
+        self::assertFileDoesNotExist($this->dir.'/function.zip');
+    }
+
+    private function package(): void
+    {
+        new Packager($this->appDir, $this->log)->package($this->dir.'/function.zip');
     }
 
     /**
-     * Runs in its own PHP process, whose sys_temp_dir is private to the test so leftovers are observable.
-     *
-     * @param array<string, string> $env
-     *
-     * @return array{int, string} the exit code and the log
+     * @param \Closure(array<mixed>): array<mixed> $edit
      */
-    private function package(string $zipFile, array $env = []): array
+    private function editComposerJson(\Closure $edit): void
     {
-        $code = \sprintf('require %s; (new %s(%s, STDERR))->package(%s);', var_export(\dirname(__DIR__).'/vendor/autoload.php', true), Packager::class, var_export($this->appDir, true), var_export($zipFile, true));
-        $env += [
-            'PACKAGER_TEST_RECORD' => $this->dir.'/record.json',
-            // Hermetic: path repositories only, and no global Composer config.
-            'COMPOSER_HOME' => $this->dir.'/composer-home',
-            'COMPOSER_CACHE_DIR' => $this->dir.'/composer-cache',
-            'COMPOSER_DISABLE_NETWORK' => '1',
-            'COMPOSER_NO_AUDIT' => '1',
-        ];
-        $process = proc_open([\PHP_BINARY, '-d', 'sys_temp_dir='.$this->dir.'/tmp', '-r', $code], [0 => ['file', '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['pipe', 'w']], $pipes, null, $env + $this->inheritedEnv());
-        \assert(false !== $process);
-        $log = (string) stream_get_contents($pipes[2]);
-        fclose($pipes[2]);
-
-        return [proc_close($process), $log];
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function inheritedEnv(): array
-    {
-        // Hermetic: a COMPOSER, COMPOSER_VENDOR_DIR... of the developer's shell would point the install elsewhere.
-        return array_filter(getenv(), static fn (string $name): bool => !str_starts_with($name, 'COMPOSER'), \ARRAY_FILTER_USE_KEY);
-    }
-
-    /**
-     * @return array<mixed>
-     */
-    private function record(): array
-    {
-        $record = json_decode((string) file_get_contents($this->dir.'/record.json'), true, 512, \JSON_THROW_ON_ERROR);
-        \assert(\is_array($record));
-
-        return $record;
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function leftovers(): array
-    {
-        return array_values(array_diff(scandir($this->dir.'/tmp') ?: [], ['.', '..']));
+        $composer = json_decode((string) file_get_contents($this->appDir.'/composer.json'), true);
+        self::assertIsArray($composer);
+        $this->filesystem->dumpFile($this->appDir.'/composer.json', (string) json_encode($edit($composer)));
     }
 }

@@ -42,6 +42,10 @@ final class ScalewayRuntimeTest extends TestCase
         chmod($this->projectDir, 0o777);
         if (is_dir($this->projectDir.'/var')) {
             chmod($this->projectDir.'/var', 0o777);
+            if (is_dir($this->projectDir.'/var/cache/prod')) {
+                rmdir($this->projectDir.'/var/cache/prod');
+                rmdir($this->projectDir.'/var/cache');
+            }
             rmdir($this->projectDir.'/var');
         }
         unlink($this->projectDir.'/.env');
@@ -114,6 +118,7 @@ final class ScalewayRuntimeTest extends TestCase
 
     public function testReadOnlyVarDirFallsBackToTempDirAndKeepsTheWarmedBuildDir(): void
     {
+        mkdir($this->projectDir.'/var/cache/prod', 0o777, true);
         chmod($this->projectDir.'/var', 0o555);
 
         $this->createRuntime();
@@ -121,6 +126,16 @@ final class ScalewayRuntimeTest extends TestCase
         self::assertSame($this->projectDir.'/var/cache', $_SERVER['APP_BUILD_DIR']);
         self::assertSame(sys_get_temp_dir().'/cache', $_SERVER['APP_CACHE_DIR']);
         self::assertSame(sys_get_temp_dir().'/log', $_SERVER['APP_LOG_DIR']);
+    }
+
+    public function testReadOnlyVarDirWithoutWarmedCacheBuildsTheContainerInTheTempDir(): void
+    {
+        chmod($this->projectDir.'/var', 0o555);
+
+        $this->createRuntime();
+
+        self::assertArrayNotHasKey('APP_BUILD_DIR', $_SERVER);
+        self::assertSame(sys_get_temp_dir().'/cache', $_SERVER['APP_CACHE_DIR']);
     }
 
     public function testReadOnlyProjectWithoutVarDirFallsBack(): void

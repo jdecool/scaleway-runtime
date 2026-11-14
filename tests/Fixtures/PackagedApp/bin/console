@@ -1,0 +1,4 @@
+#!/usr/bin/env php
+<?php
+
+// Only here to check that the zip keeps the executable bits.

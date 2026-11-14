@@ -1,4 +1,0 @@
-{
-    "name": "acme/lib",
-    "description": "A production dependency installed from a relative path repository"
-}

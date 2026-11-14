@@ -1,4 +1,0 @@
-{
-    "name": "acme/dev-tool",
-    "description": "A dev dependency the deployment zip must not ship"
-}

@@ -5,14 +5,14 @@ declare(strict_types=1);
 namespace JDecool\ScalewayRuntime;
 
 /**
- * Builds the deployment zip: a copy of the application with production dependencies
- * and a warmed-up prod cache (ADR 0003), so Invocations never compile the container.
+ * Builds the deployment zip: the application sources with composer.json and composer.lock, from which Scaleway
+ * installs the dependencies at deploy time (see docs/adr/0008-let-scaleway-install-the-dependencies.md).
  */
 final readonly class Packager
 {
     /**
      * Patterns starting with "/" match from the application root, the others match a file or directory name anywhere.
-     * vendor/ and var/ are rebuilt from scratch, the rest is local, test or secret material.
+     * Scaleway installs vendor/ itself and the cache is built on the platform, the rest is local, test or secret material.
      */
     public const array EXCLUDES = [
         '/vendor', '/var', '/tests',
@@ -41,50 +41,71 @@ final readonly class Packager
         if (!class_exists(\ZipArchive::class)) {
             throw new \RuntimeException('The zip PHP extension is required to build the deployment zip.');
         }
-        foreach (['handler.php' => 'run "vendor/bin/scaleway-init" first', 'composer.lock' => 'run "composer update" and commit it, builds must be reproducible'] as $file => $hint) {
+        foreach (['handler.php' => 'run "vendor/bin/scaleway-init" first', 'composer.lock' => 'run "composer update" and commit it, Scaleway installs the dependencies from it'] as $file => $hint) {
             if (!is_file($this->appDir.'/'.$file)) {
                 throw new \RuntimeException(\sprintf('"%s" is missing in "%s": %s.', $file, $this->appDir, $hint));
             }
         }
+        self::checkLock((string) file_get_contents($this->appDir.'/composer.json'), (string) file_get_contents($this->appDir.'/composer.lock'));
 
-        $buildDir = sys_get_temp_dir().'/scaleway-package-'.bin2hex(random_bytes(4));
-        // Private, as it holds the .env files; failing on an existing path keeps a planted directory or symlink out.
-        if (!@mkdir($buildDir, 0o700)) {
-            throw new \RuntimeException(\sprintf('Cannot create "%s".', $buildDir));
+        $this->log('Writing '.$zipFile);
+        [$zipSize, $codeSize] = $this->zip($zipFile, $this->relativeToApp($zipFile));
+        $this->log(\sprintf('Done: %.1f MiB zipped, %.1f MiB unzipped before Scaleway installs the dependencies', $zipSize / 1024 ** 2, $codeSize / 1024 ** 2));
+        if ($zipSize > self::MAX_ZIP_SIZE) {
+            $this->log('WARNING: the zip exceeds the 100 MiB Scaleway accepts');
         }
-        try {
-            $this->log('Copying the application to '.$buildDir);
-            $this->copy($buildDir, $this->relativeToApp($zipFile));
-
-            $this->log('Installing production dependencies');
-            $lock = (string) file_get_contents($buildDir.'/composer.lock');
-            $this->writeJson($buildDir.'/composer.lock', self::resolvePathRepositories($this->decodeJson($lock), $this->appDir));
-            try {
-                $this->run(['composer', 'install', '--no-dev', '--classmap-authoritative', '--no-interaction', '--no-progress'], $buildDir);
-            } finally {
-                // The zip ships the lock file exactly as committed.
-                file_put_contents($buildDir.'/composer.lock', $lock);
-            }
-
-            if (is_file($buildDir.'/bin/console')) {
-                $this->log('Warming up the prod cache');
-                $this->run([\PHP_BINARY, 'bin/console', 'cache:warmup', '--no-interaction'], $buildDir);
-            } else {
-                $this->log('No bin/console found: the cache is not warmed up, the container will be compiled at the first Invocation');
-            }
-
-            $this->log('Writing '.$zipFile);
-            [$zipSize, $codeSize] = $this->zip($buildDir, $zipFile);
-            $this->log(\sprintf('Done: %.1f MiB zipped, %.1f MiB unzipped', $zipSize / 1024 ** 2, $codeSize / 1024 ** 2));
-            if ($zipSize > self::MAX_ZIP_SIZE) {
-                $this->log('WARNING: the zip exceeds the 100 MiB Scaleway accepts');
-            }
-            if ($codeSize > self::MAX_CODE_SIZE) {
-                $this->log('WARNING: the unzipped code exceeds the 500 MiB Scaleway accepts');
-            }
-        } finally {
-            $this->remove($buildDir);
+        if ($codeSize > self::MAX_CODE_SIZE) {
+            $this->log('WARNING: the unzipped code exceeds the 500 MiB Scaleway accepts');
         }
+    }
+
+    /**
+     * Refuses what would make Scaleway's "composer install" fail or install something else than the lock says:
+     * Composer only warns about a stale lock, and a failed install does not even fail the deployment.
+     */
+    public static function checkLock(string $composerJson, string $composerLock): void
+    {
+        $composer = self::decodeJson($composerJson, 'composer.json');
+        $lock = self::decodeJson($composerLock, 'composer.lock');
+
+        foreach (\is_array($composer['repositories'] ?? null) ? $composer['repositories'] : [] as $repository) {
+            if (\is_array($repository) && 'path' === ($repository['type'] ?? null)) {
+                throw new \RuntimeException(\sprintf('composer.json declares the "path" repository "%s", which Scaleway cannot resolve: remove it and run "composer update".', \is_string($repository['url'] ?? null) ? $repository['url'] : ''));
+            }
+        }
+        foreach (['packages', 'packages-dev'] as $section) {
+            foreach (\is_array($lock[$section] ?? null) ? $lock[$section] : [] as $package) {
+                if (\is_array($package) && \is_array($package['dist'] ?? null) && 'path' === ($package['dist']['type'] ?? null)) {
+                    throw new \RuntimeException(\sprintf('composer.lock installs "%s" from a local path, which Scaleway cannot resolve: install it from a remote repository and run "composer update".', \is_string($package['name'] ?? null) ? $package['name'] : ''));
+                }
+            }
+        }
+        if (($lock['content-hash'] ?? null) !== self::contentHash($composer)) {
+            throw new \RuntimeException('composer.lock is not up to date with composer.json: run "composer update --lock" and commit it.');
+        }
+    }
+
+    /**
+     * Composer's own Locker::getContentHash(), as the application may not ship Composer's classes.
+     *
+     * @param array<mixed> $composer
+     */
+    public static function contentHash(array $composer): string
+    {
+        $relevant = array_intersect_key($composer, array_flip(['name', 'version', 'require', 'require-dev', 'conflict', 'replace', 'provide', 'minimum-stability', 'prefer-stable', 'repositories', 'extra']));
+        $config = \is_array($composer['config'] ?? null) ? $composer['config'] : [];
+        $relevantConfig = [];
+        foreach (['platform', 'policy'] as $key) {
+            if (isset($config[$key])) {
+                $relevantConfig[$key] = $config[$key];
+            }
+        }
+        if ([] !== $relevantConfig) {
+            $relevant['config'] = $relevantConfig;
+        }
+        ksort($relevant);
+
+        return md5(json_encode($relevant, \JSON_THROW_ON_ERROR));
     }
 
     public static function isExcluded(string $relativePath): bool
@@ -100,34 +121,9 @@ final readonly class Packager
     }
 
     /**
-     * Relative "path" repositories point outside the application, so they no longer resolve from
-     * the build dir: they are made absolute, against the application dir they are relative to.
-     *
-     * @param array<mixed> $lock
-     *
-     * @return array<mixed>
+     * @return array{int, int} the zip size and the total size of the zipped files
      */
-    public static function resolvePathRepositories(array $lock, string $appDir): array
-    {
-        foreach (['packages', 'packages-dev'] as $section) {
-            $packages = \is_array($lock[$section] ?? null) ? $lock[$section] : [];
-            foreach ($packages as $i => $package) {
-                $dist = \is_array($package) ? $package['dist'] ?? null : null;
-                if (\is_array($package) && \is_array($dist) && 'path' === ($dist['type'] ?? null) && \is_string($dist['url'] ?? null) && !str_starts_with($dist['url'], '/')) {
-                    $dist['url'] = $appDir.'/'.$dist['url'];
-                    $package['dist'] = $dist;
-                    $packages[$i] = $package;
-                }
-            }
-            if (isset($lock[$section])) {
-                $lock[$section] = $packages;
-            }
-        }
-
-        return $lock;
-    }
-
-    private function copy(string $buildDir, ?string $skip): void
+    private function zip(string $zipFile, ?string $skip): array
     {
         $files = new \RecursiveIteratorIterator(
             new \RecursiveCallbackFilterIterator(
@@ -138,35 +134,16 @@ final readonly class Packager
                     return $relativePath !== $skip && !self::isExcluded($relativePath);
                 },
             ),
-            \RecursiveIteratorIterator::SELF_FIRST,
         );
 
-        foreach ($files as $file) {
-            \assert($file instanceof \SplFileInfo);
-            $target = $buildDir.'/'.substr($file->getPathname(), \strlen($this->appDir) + 1);
-            if ($file->isDir()) {
-                $this->mkdir($target);
-            } elseif (!copy($file->getPathname(), $target) || !chmod($target, $file->getPerms() & 0o777)) {
-                throw new \RuntimeException(\sprintf('Cannot copy "%s" to "%s".', $file->getPathname(), $target));
-            }
-        }
-    }
-
-    /**
-     * @return array{int, int} the zip size and the total size of the zipped files
-     */
-    private function zip(string $buildDir, string $zipFile): array
-    {
         $zip = new \ZipArchive();
         if (true !== $zip->open($zipFile, \ZipArchive::CREATE | \ZipArchive::OVERWRITE)) {
             throw new \RuntimeException(\sprintf('Cannot create "%s".', $zipFile));
         }
-
         $codeSize = 0;
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($buildDir, \FilesystemIterator::SKIP_DOTS));
         foreach ($files as $file) {
             \assert($file instanceof \SplFileInfo);
-            $name = substr($file->getPathname(), \strlen($buildDir) + 1);
+            $name = substr($file->getPathname(), \strlen($this->appDir) + 1);
             $zip->addFile($file->getPathname(), $name);
             // Keeps the executable bits, as for bin/console.
             $zip->setExternalAttributesName($name, \ZipArchive::OPSYS_UNIX, ($file->getPerms() & 0o777 | 0o100000) << 16);
@@ -181,19 +158,6 @@ final readonly class Packager
         return [(int) filesize($zipFile), $codeSize];
     }
 
-    /**
-     * @param list<string> $command
-     */
-    private function run(array $command, string $cwd): void
-    {
-        $env = ['APP_ENV' => 'prod', 'APP_DEBUG' => '0', 'COMPOSER_MIRROR_PATH_REPOS' => '1'] + getenv();
-        // Child output goes to our stderr, keeping stdout clean like the rest of the log.
-        $process = proc_open($command, [0 => ['file', '/dev/null', 'r'], 1 => $this->log, 2 => $this->log], $pipes, $cwd, $env);
-        if (false === $process || 0 !== $exitCode = proc_close($process)) {
-            throw new \RuntimeException(\sprintf('"%s" failed%s.', implode(' ', $command), isset($exitCode) ? ' with exit code '.$exitCode : ''));
-        }
-    }
-
     private function relativeToApp(string $file): ?string
     {
         $dir = realpath(\dirname($file));
@@ -201,42 +165,14 @@ final readonly class Packager
         return false !== $dir && str_starts_with($dir.'/', $this->appDir.'/') ? ltrim(substr($dir, \strlen($this->appDir)).'/'.basename($file), '/') : null;
     }
 
-    private function remove(string $dir): void
-    {
-        if (!is_dir($dir)) {
-            return;
-        }
-        $files = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS), \RecursiveIteratorIterator::CHILD_FIRST);
-        foreach ($files as $file) {
-            \assert($file instanceof \SplFileInfo);
-            $file->isDir() && !$file->isLink() ? rmdir($file->getPathname()) : unlink($file->getPathname());
-        }
-        rmdir($dir);
-    }
-
-    private function mkdir(string $dir): void
-    {
-        if (!is_dir($dir) && !mkdir($dir, 0o777, true)) {
-            throw new \RuntimeException(\sprintf('Cannot create "%s".', $dir));
-        }
-    }
-
     /**
      * @return array<mixed>
      */
-    private function decodeJson(string $json): array
+    private static function decodeJson(string $json, string $file): array
     {
-        $data = json_decode($json, true, 512, \JSON_THROW_ON_ERROR);
+        $data = json_decode($json, true);
 
-        return \is_array($data) ? $data : throw new \UnexpectedValueException('composer.lock must hold a JSON object.');
-    }
-
-    /**
-     * @param array<mixed> $data
-     */
-    private function writeJson(string $file, array $data): void
-    {
-        file_put_contents($file, json_encode($data, \JSON_THROW_ON_ERROR | \JSON_UNESCAPED_SLASHES));
+        return \is_array($data) ? $data : throw new \UnexpectedValueException(\sprintf('%s must hold a JSON object.', $file));
     }
 
     private function log(string $message): void

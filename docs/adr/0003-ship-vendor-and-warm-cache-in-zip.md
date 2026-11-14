@@ -1,3 +1,7 @@
+---
+status: superseded by ADR-0008
+---
+
 # The deployment zip ships vendor/ and a warmed-up cache
 
 Scaleway can install Composer dependencies itself at deploy time, which is its documented path.
