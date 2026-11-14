@@ -14,6 +14,8 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 
 Its `post-install-cmd` warms the prod cache when Scaleway installs the dependencies at deploy time, as the warmup needs no secret; without it, the first Invocation of each Warm Process builds the cache.
 
+It logs from the `info` level to stderr, which reaches Cockpit, through Symfony's fallback logger lowered in `config/services.yaml`, without Monolog.
+
 The `app:greet` console command (`src/Command/GreetCommand.php`) runs as a Command Invocation: a `POST /` whose JSON body is `{"command": "app:greet", "args": {"name": "...", "--yell": true}, "secret": "..."}`, the secret matching the function's `SCALEWAY_CRON_SECRET`.
 Its `--fail` option shows how a failed command answers: a 500 with the command output.
 Over HTTP, even with the secret, the same body is a plain HTTP body and lands on `POST /`.
@@ -37,13 +39,12 @@ return static fn (): Closure => static fn (array $event, mixed $context): array 
 
 ## Run it locally
 
-The package is not on Packagist yet, and the example works on the runtime of this checkout anyway: `composer link-runtime` installs it from the parent directory, through a `path` repository it adds to `composer.json`.
-Never commit that repository: `scaleway-package` refuses it, as Scaleway cannot resolve it.
-Until the first publication, the committed `composer.lock` is the one `link-runtime` writes; once the package is on Packagist, it is regenerated without the repository (`composer update jdecool/scaleway-runtime`) and committed, which makes the example deployable as is.
+The example requires the runtime from Packagist; `composer link-runtime` installs the runtime of this checkout instead, from the parent directory, through a `path` repository it adds to `composer.json`.
+Never commit that repository nor the lock it writes: `scaleway-package` refuses them, as Scaleway cannot resolve them.
 
 ```sh
 cd example
-composer link-runtime
+composer install                          # or composer link-runtime, for the runtime of this checkout
 export SCALEWAY_CRON_SECRET=local-secret  # lets the Emulator and the scenarios run Command Invocations
 vendor/bin/scaleway-serve                 # the Emulator, on http://127.0.0.1:8000
 e2e/run.sh http://127.0.0.1:8000          # in another terminal, with the same SCALEWAY_CRON_SECRET
@@ -66,8 +67,6 @@ It publishes the runtime of this checkout to that install in place of Packagist,
 
 ## Deploy it
 
-Deploying needs the package on Packagist and the lock regenerated against it, see above: until then, `scaleway-package` refuses the committed lock.
-The Terraform code is unvalidated: it was written against the `scaleway/scaleway` provider v2.92 documentation and never applied.
 Set `host` to the function's domain (or a custom domain) for absolute URLs to be right; it cannot default to the function's own `domain_name`, so apply once, then again with `-var host=...`.
 
 ```sh
@@ -83,3 +82,9 @@ terraform -chdir=terraform destroy
 
 Rerun `scaleway-package` and `terraform apply` to deploy a new version.
 Against a deployment, `e2e/run.sh` skips the CRON scenarios, as only the platform triggers CRON Invocations.
+Check them in the [logs](../README.md#logs) instead, after the triggers ran (at minutes 0 and 30): each one leaves its line, the second showing that `app:greet` ran as a Command Invocation.
+
+```
+DEBUG - [info] CRON Invocation received with the arguments job source=user stream=stderr
+DEBUG - [info] Command app:greet said: Hello CRON! source=user stream=stderr
+```

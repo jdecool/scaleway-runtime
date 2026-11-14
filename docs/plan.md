@@ -53,8 +53,9 @@ Recorded per phase; the settled design above already reflects them.
 ## Remaining work
 
 Done on 2026-11-14: the repository is on GitHub with CI green, the package is on Packagist, `example/composer.lock` is locked from Packagist, and `example/e2e/run.sh` passed against the example deployed on Scaleway (`php85`), before `v0.1.0` was tagged.
+Command Invocations were then verified on that deployment through its logs ([probe results](probe-results.md#cron-invocations)): a CRON trigger lands on `POST /`, the `app:greet` arguments with the secret run the command, a wrong secret or an HTTP call do not, and a failing command is logged.
+For that, the example logs from the `info` level to stderr, and no longer logs the body of `POST /`, which may hold the secret; `e2e/run.sh` still skips the CRON scenarios against a deployment, the triggers firing hourly and their outcome being in Cockpit only, so the example README documents the manual check.
 
-1. Verify a Command Invocation end to end on Scaleway: the e2e scenarios trigger CRON Invocations only through the Emulator, and the deployed one could only be observed in the logs.
-2. Run the example deployment with `host` set, to check absolute URLs.
-3. Measure what the probe left open: what a deployment with a failing Composer script serves.
+1. Run the example deployment with `host` set, to check absolute URLs.
+2. Measure what the probe left open: what a deployment with a failing Composer script serves.
    Where logs go was measured on 2026-11-14 ([probe results](probe-results.md#logs)): the runtime's stderr lines reach Cockpit one entry per line, with a `DEBUG - ` prefix and a ` source=user stream=stderr` suffix.

@@ -81,6 +81,25 @@ Headers sent by the client:
 - The trigger `args` arrive as a JSON string in `body`, without `isBase64Encoded`.
 - CRON Events carry neither `X-Real-Ip` nor `X-Envoy-External-Address`, which the platform always sets (overwriting client values) on external HTTP calls.
 
+## CRON Invocations
+
+Measured on 2026-11-14 with the [example](../example) and `jdecool/scaleway-runtime` v0.1.0 (`php85`), its two triggers set to every minute in a copy of its Terraform, with two more: the `app:greet` arguments with a wrong secret, and with `--fail`.
+For three minutes, each of the four triggers fired once a minute, 1 to 15 seconds past it, each Invocation preceded by `DEBUG - Function Triggered: / source=core`.
+Their stderr lines, without the `DEBUG - ` prefix and ` source=user stream=stderr` suffix:
+
+| Trigger arguments | Logged |
+| --- | --- |
+| `{"job": "hourly"}` | `[info] Matched route "app_demo_cron".`, then `[info] CRON Invocation received with the arguments job` |
+| `app:greet`, `{"name": "CRON"}`, the right secret | `[info] Command app:greet said: Hello CRON!` only: no route matched, no failure |
+| `app:greet`, a wrong secret | `Command Invocation rejected: the "secret" does not match SCALEWAY_CRON_SECRET, the body goes to the Application as a plain HTTP body.`, then the `POST /` lines |
+| `app:greet`, `{"--fail": true}`, the right secret | `[info] Command app:greet said: Hello world!`, then `Command "app:greet" failed with exit code 1: Hello world!` and one entry per line of the output, blank ones included |
+
+- The wrong secret was rejected for the secret, not for the HTTP-only headers: CRON Events lack them, as the probe found.
+- The same `app:greet` body with the right secret, sent over HTTP by `example/e2e/run.sh`, logged `Command Invocation rejected: the Event comes from an HTTP call, not a CRON trigger, ...` and landed on `POST /`.
+- The failing command was not retried: one Invocation a minute, like the others.
+- The status code of a CRON Invocation's Function Response appears nowhere in the logs.
+- The CRON secret appeared in none of the 110 entries of the run.
+
 ## Context
 
 An `array`: `{"memoryLimitInMb": 256, "functionName": "probe-php85", "functionVersion": ""}`.

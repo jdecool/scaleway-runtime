@@ -1,4 +1,4 @@
-# Deploys the example application. Unvalidated: written against the scaleway provider docs (v2.92), never applied.
+# Deploys the example application.
 # Credentials come from the usual SCW_ACCESS_KEY, SCW_SECRET_KEY and SCW_DEFAULT_PROJECT_ID variables.
 # Build the zip first: (cd example && vendor/bin/scaleway-package).
 

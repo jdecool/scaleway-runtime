@@ -10,7 +10,7 @@ Vocabulary (Invocation, Event, Warm Process...) is defined in [GLOSSARY.md](GLOS
 
 > [!IMPORTANT]
 > The platform facts the runtime relies on were measured on Scaleway with the [probe](probe), see [docs/probe-results.md](docs/probe-results.md).
-> The runtime itself has only run through the Emulator so far, and the package is not on Packagist yet.
+> The [example application](example) runs on Scaleway: its scenarios, CRON triggers and Command Invocations were checked on a deployment.
 
 ## Contents
 
@@ -323,6 +323,8 @@ Services are reset around each command, so it shares no state with the Invocatio
 | `args` not a JSON object | 500 |
 | The Front Controller returns a Response, a PSR-15 handler or a plain `HttpKernelInterface` | 500, as there is no Console Application to run the command |
 
+Nothing shows the Function Response of a CRON Invocation, and a failed one is not retried: the [logs](#logs) are where the outcome of a command shows up, so log what it does ([measured](docs/probe-results.md#cron-invocations)).
+
 ### Security model
 
 A body only becomes a Command Invocation when both hold:
@@ -382,6 +384,7 @@ Replacing a function, for instance to change its `runtime`, deletes its CRON tri
 
 Scaleway sends what the function writes to stdout and stderr to [Cockpit](https://www.scaleway.com/en/docs/cockpit/), in the project's `Scaleway Logs` data source, about 2 seconds after it is written.
 The runtime logs its own failures to stderr, as Monolog does with a `php://stderr` handler.
+Without Monolog, Symfony's fallback logger writes to stderr too, but from the `error` level only: lower it as the [example](example/config/services.yaml) does.
 Each line is one log entry: a stack trace spans one entry per line, and a line over 16 KiB is split into 16 KiB entries and cut after 64 KiB.
 Every entry has the `debug` level, stderr ones included, except the continuations of a split line, whose level is `unknown`: filter on the `stream` field instead.
 An entry looks like this, with the `resource_id` label holding the function's UUID:
