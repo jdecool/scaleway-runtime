@@ -28,11 +28,12 @@
             "@php bin/console cache:warmup --env=prod"
         ],
         "link-runtime": [
+            "rm -rf vendor/jdecool/scaleway-runtime",
             "@composer config repositories.local '{\"type\": \"path\", \"url\": \"..\", \"options\": {\"versions\": {\"jdecool/scaleway-runtime\": \"dev-main\"}}}'",
             "@composer update jdecool/scaleway-runtime"
         ]
     },
     "scripts-descriptions": {
-        "link-runtime": "Installs jdecool/scaleway-runtime from the parent directory: never commit the repository it adds"
+        "link-runtime": "Installs jdecool/scaleway-runtime from the parent directory, replacing an installed copy, which Composer refuses to replace from a path containing it: never commit the repository it adds"
     }
 }
