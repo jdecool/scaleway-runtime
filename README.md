@@ -473,6 +473,7 @@ The runtime trusts no proxy, as clients can forge most forwarding headers on Sca
 | `getHost()` | The [`host` option](#host) | No `Host` header reaches the function |
 
 `X-Forwarded-For` (the client's value is kept in front), `X-Forwarded-Host`, `X-Forwarded-Port` and `Forwarded` are passed through from the client: they reach the Application as plain headers, and nothing trusts them.
+Headers whose name holds an underscore (`X_Real_Ip`) are dropped, as nginx and Apache do, since PHP would read them as the platform's ones.
 
 > [!CAUTION]
 > Do not configure `framework.trusted_proxies`: the client is already resolved, and trusting `REMOTE_ADDR` or private ranges would make Symfony trust those forgeable headers again.
