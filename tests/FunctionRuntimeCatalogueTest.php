@@ -92,6 +92,38 @@ final class FunctionRuntimeCatalogueTest extends TestCase
         FunctionRuntimeCatalogue::load()->get('php83');
     }
 
+    public function testChangesListWhatANewMeasurementChanged(): void
+    {
+        $old = new FunctionRuntimeCatalogue([
+            'php83' => ['measuredAt' => '2026-11-14T10:00:00Z', 'php' => '8.3.30', 'extensions' => []],
+            'php84' => ['measuredAt' => '2026-11-14T10:00:00Z', 'php' => '8.4.27', 'extensions' => ['ext-amqp' => '2.2.0', 'ext-ctype' => '8.4.27', 'ext-redis' => '6.3.0']],
+            'php85' => ['measuredAt' => '2026-11-14T10:00:00Z', 'php' => '8.5.13', 'extensions' => ['ext-redis' => '6.3.0']],
+        ]);
+        $new = new FunctionRuntimeCatalogue([
+            'php84' => ['measuredAt' => '2026-11-29T10:00:00Z', 'php' => '8.4.29', 'extensions' => ['ext-ctype' => '8.4.29', 'ext-foo' => '1.2.0', 'ext-redis' => '6.3.0']],
+            'php85' => ['measuredAt' => '2026-11-29T10:00:00Z', 'php' => '8.5.13', 'extensions' => ['ext-redis' => '6.3.0']],
+            'php86' => ['measuredAt' => '2026-11-29T10:00:00Z', 'php' => '8.6.0', 'extensions' => ['ext-redis' => '6.3.0']],
+        ]);
+
+        self::assertSame([
+            'php83: no longer measured',
+            'php84: PHP 8.4.27 -> 8.4.29',
+            'php84: ext-ctype 8.4.27 -> 8.4.29',
+            'php84: + ext-foo 1.2.0',
+            'php84: - ext-amqp',
+            'php84: measured 2026-11-14T10:00:00Z -> 2026-11-29T10:00:00Z',
+            'php86: new Function Runtime, PHP 8.6.0 with 1 extensions',
+        ], $new->changes($old));
+    }
+
+    public function testNewMeasurementDatesAloneAreNoChange(): void
+    {
+        $catalogue = FunctionRuntimeCatalogue::load();
+        $remeasured = new FunctionRuntimeCatalogue(array_map(static fn (array $functionRuntime): array => ['measuredAt' => '2099-01-01T00:00:00Z'] + $functionRuntime, $catalogue->functionRuntimes));
+
+        self::assertSame([], $remeasured->changes($catalogue));
+    }
+
     /**
      * @param array<string, mixed> $measurement
      */

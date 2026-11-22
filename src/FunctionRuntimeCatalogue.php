@@ -86,6 +86,44 @@ final readonly class FunctionRuntimeCatalogue
     }
 
     /**
+     * What changed since an older catalogue, one line each, for the pull request a new measurement opens.
+     * Empty when only the measurement dates changed: the Function Runtimes still are as recorded.
+     *
+     * @return list<string>
+     */
+    public function changes(self $old): array
+    {
+        $changes = [];
+        foreach (array_diff_key($old->functionRuntimes, $this->functionRuntimes) as $name => $_) {
+            $changes[] = $name.': no longer measured';
+        }
+        foreach ($this->functionRuntimes as $name => $new) {
+            $previous = $old->functionRuntimes[$name] ?? null;
+            if (null === $previous) {
+                $changes[] = \sprintf('%s: new Function Runtime, PHP %s with %d extensions', $name, $new['php'], \count($new['extensions']));
+                continue;
+            }
+            $lines = $previous['php'] === $new['php'] ? [] : [\sprintf('%s: PHP %s -> %s', $name, $previous['php'], $new['php'])];
+            foreach ($new['extensions'] + $previous['extensions'] as $extension => $_) {
+                $before = $previous['extensions'][$extension] ?? null;
+                $after = $new['extensions'][$extension] ?? null;
+                $lines[] = match (true) {
+                    null === $before => \sprintf('%s: + %s %s', $name, $extension, $after),
+                    null === $after => \sprintf('%s: - %s', $name, $extension),
+                    $before !== $after => \sprintf('%s: %s %s -> %s', $name, $extension, $before, $after),
+                    default => null,
+                };
+            }
+            $lines = array_values(array_filter($lines));
+            if ([] !== $lines) {
+                $changes = [...$changes, ...$lines, \sprintf('%s: measured %s -> %s', $name, $previous['measuredAt'], $new['measuredAt'])];
+            }
+        }
+
+        return $changes;
+    }
+
+    /**
      * Composer keeps a parseable PHP_VERSION whole, so that "8.5.0-RC1" stays a pre-release, and cuts the others, as
      * "8.4.28-1+deb12", before their first "~", "+" or "-".
      */
