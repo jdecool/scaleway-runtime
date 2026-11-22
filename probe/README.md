@@ -78,7 +78,7 @@ To update the [Function Runtime Catalogue](../docs/probe-results.md#function-run
 curl -sS "$PROBE_URL/?mode=runtime" > ../tests/Fixtures/FunctionRuntimes/php85.json
 ```
 
-10. Export the function's logs of the last hour, CRON lines included, from Cockpit's Grafana or with the Loki query of the [README](../README.md#logs).
+10. Export the function's logs of the last hour, CRON lines included, from Cockpit's Grafana or with the Loki query of the [README](../docs/logs.md).
 
 11. Compare a CRON Event (step 9 or 10) with the HTTP one of `01-facts.json`, `event` and `context` alike, and list what only the CRON one has or lacks: headers (a trigger name or id, a token, `User-Agent`, `X-Forwarded-For`), method, path, context fields.
     Then send each such header from a plain HTTP call, and check whether it reaches the Event as sent, is overwritten, or is removed: only a marker the platform sets itself can tell CRON Invocations from HTTP ones.
