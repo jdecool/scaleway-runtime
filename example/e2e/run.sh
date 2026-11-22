@@ -148,6 +148,15 @@ expect "precompressed variant encoding" "$(header gzip content-encoding)" gzip
 expect "precompressed variant varies" "$(header gzip vary)" Accept-Encoding
 expect "precompressed variant body" "$(php -r 'echo hash("sha256", (string) gzdecode(file_get_contents($argv[1])));' "$tmp/gzip.body")" "$(sha256 "$(dirname "$0")/../public/css/app.css")"
 
+# zstd is preferred to gzip, and Scaleway's php85 can compress with it too.
+status=$(request zstd -H 'Accept-Encoding: gzip, zstd' "$base_url/css/app.css")
+expect "zstd variant preferred to gzip" "$(header zstd content-encoding)" zstd
+if php -r 'exit(function_exists("zstd_uncompress") ? 0 : 1);'; then
+    expect "zstd variant body" "$(php -r 'echo hash("sha256", (string) zstd_uncompress(file_get_contents($argv[1])));' "$tmp/zstd.body")" "$(sha256 "$(dirname "$0")/../public/css/app.css")"
+else
+    echo "skip zstd variant body: the local php lacks the zstd extension"
+fi
+
 status=$(request js "$base_url/js/greeting.js")
 expect "JavaScript module content type" "$status $(header js content-type)" "200 text/javascript"
 status=$(request png "$base_url/images/logo.png")

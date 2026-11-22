@@ -27,7 +27,7 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  *  - "front_controller": the Front Controller path, relative to "project_dir"; defaults to "public/index.php";
  *  - "host": the public host of the function, as no Host header reaches it; defaults to the SCALEWAY_HOST
  *    environment variable, then to "localhost";
- *  - "static_compression": false (the default), "gzip" or "br", the encoding Static Files of a textual type are
+ *  - "static_compression": false (the default), "gzip", "br" or "zstd", the encoding Static Files of a textual type are
  *    compressed with on the fly when they have no precompressed variant.
  *
  * Unlike SymfonyRuntime, it defaults the env to prod when the process environment sets none, whatever .env files say.

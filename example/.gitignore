@@ -7,3 +7,4 @@
 # Precompressed Static File variants are shipped on purpose, whatever a global gitignore says.
 !/public/**/*.gz
 !/public/**/*.br
+!/public/**/*.zst

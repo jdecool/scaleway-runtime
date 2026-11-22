@@ -18,7 +18,7 @@ The files of `public/` are [Static Files](../README.md#static-files), served by 
 
 | File | What it shows |
 | --- | --- |
-| `/css/app.css` | A stylesheet, revalidated with its `ETag`; with `Accept-Encoding: gzip`, its precompressed `app.css.gz` |
+| `/css/app.css` | A stylesheet, revalidated with its `ETag`; with `Accept-Encoding: zstd` or `gzip`, its precompressed `app.css.zst` or `app.css.gz` |
 | `/js/greeting.js` | A JavaScript module, as `text/javascript` |
 | `/images/logo.png` | A binary file, base64-encoded in the Function Response |
 | `/assets/app-Ex4mPl3.css` | A digested file as AssetMapper writes one, listed in `assets/manifest.json`, so cached for good |

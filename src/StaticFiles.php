@@ -18,10 +18,10 @@ use Symfony\Component\Mime\MimeTypes;
 final class StaticFiles
 {
     /** Encodings of the precompressed variants, in order of preference, with their file extension. */
-    public const array PRECOMPRESSED = ['br' => '.br', 'gzip' => '.gz'];
+    public const array PRECOMPRESSED = ['br' => '.br', 'zstd' => '.zst', 'gzip' => '.gz'];
 
-    /** The values of the "static_compression" runtime option, but false. */
-    public const array COMPRESSIONS = ['gzip', 'br'];
+    /** The values of the "static_compression" runtime option, but false, with the extension and function each needs. */
+    public const array COMPRESSIONS = ['gzip' => ['zlib', 'gzencode'], 'br' => ['brotli', 'brotli_compress'], 'zstd' => ['zstd', 'zstd_compress']];
 
     // The platform enforces no limit, but larger responses intermittently time out (docs/probe-results.md#size-and-encodings).
     public const int MAX_RESPONSE_SIZE = 6 * 1024 * 1024;
@@ -49,9 +49,9 @@ final class StaticFiles
     private array $manifests = [];
 
     /**
-     * @param string           $webRoot     the directory holding the Static Files
-     * @param 'gzip'|'br'|null $compression the encoding to compress textual files with on the fly, if any
-     * @param resource         $errorLog
+     * @param string                  $webRoot     the directory holding the Static Files
+     * @param 'gzip'|'br'|'zstd'|null $compression the encoding to compress textual files with on the fly, if any
+     * @param resource                $errorLog
      */
     public function __construct(
         private readonly string $webRoot,
@@ -69,15 +69,13 @@ final class StaticFiles
         if (false === $compression || null === $compression) {
             return new self($webRoot, null, $errorLog);
         }
-        if (!\in_array($compression, self::COMPRESSIONS, true)) {
-            throw new \InvalidArgumentException(\sprintf('The "static_compression" runtime option must be false, "gzip" or "br", "%s" given.', get_debug_type($compression)));
+        if (!\is_string($compression) || !isset(self::COMPRESSIONS[$compression])) {
+            throw new \InvalidArgumentException(\sprintf('The "static_compression" runtime option must be false, "gzip", "br" or "zstd", "%s" given.', get_debug_type($compression)));
         }
         // Falling back to another encoding would hide that the function serves something else than what was asked.
-        if ('br' === $compression && !\function_exists('brotli_compress')) {
-            throw new \LogicException('The "static_compression" runtime option is "br", but the brotli extension is not loaded.');
-        }
-        if ('gzip' === $compression && !\function_exists('gzencode')) {
-            throw new \LogicException('The "static_compression" runtime option is "gzip", but the zlib extension is not loaded.');
+        [$extension, $function] = self::COMPRESSIONS[$compression];
+        if (!\function_exists($function)) {
+            throw new \LogicException(\sprintf('The "static_compression" runtime option is "%s", but the %s extension is not loaded.', $compression, $extension));
         }
 
         return new self($webRoot, $compression, $errorLog);
@@ -255,7 +253,7 @@ final class StaticFiles
         }
 
         $content = (string) file_get_contents($file);
-        $body = (string) ('br' === $encoding ? brotli_compress($content) : gzencode($content));
+        $body = (string) (self::COMPRESSIONS[$encoding][1])($content);
         // Past the cap, files are compressed again for each Invocation rather than growing the Warm Process.
         if ($this->compressedSize + \strlen($body) <= self::COMPRESSION_CACHE_SIZE) {
             $this->compressed[$key] = $body;

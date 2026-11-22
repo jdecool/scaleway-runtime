@@ -319,7 +319,7 @@ Long-lived caching of digested files is what spares most of them.
 
 A file is sent compressed when the client accepts it, in this order:
 
-1. a precompressed variant shipped next to it, `app.css.br` then `app.css.gz`, written by any build step;
+1. a precompressed variant shipped next to it, `app.css.br`, then `app.css.zst`, then `app.css.gz`, written by any build step;
 2. otherwise, when the `static_compression` runtime option is set, the file compressed by the runtime.
 
 ```json
@@ -332,8 +332,8 @@ A file is sent compressed when the client accepts it, in this order:
 }
 ```
 
-`static_compression` is `false` by default, `"gzip"`, or `"br"`, which needs the `brotli` extension: any other value, or `"br"` without the extension, answers every Invocation with a 500 until fixed.
-The Scaleway `php85` runtime does not load `brotli`, so use `"gzip"` there, and ship `.br` variants built beforehand for brotli.
+`static_compression` is `false` by default, `"gzip"`, `"zstd"` or `"br"`, each needing its extension (`zlib`, `zstd`, `brotli`): any other value, or one whose extension is not loaded, answers every Invocation with a 500 until fixed.
+The Scaleway `php85` runtime loads `zlib` and `zstd` but not `brotli`: use `"zstd"` or `"gzip"` there, and ship `.br` variants built beforehand for brotli.
 The runtime only compresses textual files (`text/*`, JavaScript, JSON, XML, SVG, WebAssembly) of at least 1 KiB, and keeps the results in memory for the Warm Process, up to 32 MiB.
 
 The order of preference is the runtime's: only a `q=0` in `Accept-Encoding` refuses an encoding.

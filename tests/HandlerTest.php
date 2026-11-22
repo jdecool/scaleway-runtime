@@ -120,7 +120,7 @@ final class HandlerTest extends TestCase
 
         self::assertSame(500, $handler->invoke(['path' => '/static.txt'], [])['statusCode']);
         self::assertSame(500, $handler->invoke(['path' => '/'], [])['statusCode']);
-        self::assertStringContainsString('The "static_compression" runtime option must be false, "gzip" or "br"', $this->errorLog());
+        self::assertStringContainsString('The "static_compression" runtime option must be false, "gzip", "br" or "zstd"', $this->errorLog());
         self::assertSame(0, RecordingKernel::$builds);
     }
 

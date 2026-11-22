@@ -184,9 +184,11 @@ final class StaticFilesTest extends TestCase
         yield 'gzip only' => ['gzip', 'gzip'];
         yield 'both, brotli preferred whatever the weights' => ['gzip;q=1.0, br;q=0.1', 'br'];
         yield 'brotli refused' => ['gzip, br;q=0', 'gzip'];
+        yield 'zstd preferred to gzip' => ['gzip, zstd', 'zstd'];
+        yield 'brotli preferred to zstd' => ['zstd, br', 'br'];
         yield 'wildcard' => ['*', 'br'];
-        yield 'wildcard but brotli' => ['*, br;q=0', 'gzip'];
-        yield 'everything refused' => ['br;q=0, gzip;q=0', null];
+        yield 'wildcard but brotli' => ['*, br;q=0', 'zstd'];
+        yield 'everything refused' => ['br;q=0, zstd;q=0, gzip;q=0', null];
         yield 'case insensitive' => ['GZIP', 'gzip'];
     }
 
@@ -194,6 +196,7 @@ final class StaticFilesTest extends TestCase
     public function testServesThePreferredPrecompressedVariant(string $acceptEncoding, ?string $expected): void
     {
         $this->write('app.css.br', 'brotli bytes');
+        $this->write('app.css.zst', "\x28\xb5\x2f\xfd zstd bytes");
         $this->write('app.css.gz', "\x1f\x8b gzip bytes");
 
         $response = $this->serve('/app.css', headers: ['Accept-Encoding' => $acceptEncoding]);
@@ -204,6 +207,7 @@ final class StaticFilesTest extends TestCase
         $body = true === ($response['isBase64Encoded'] ?? false) ? base64_decode($response['body'], true) : $response['body'];
         self::assertSame(match ($expected) {
             'br' => 'brotli bytes',
+            'zstd' => "\x28\xb5\x2f\xfd zstd bytes",
             'gzip' => "\x1f\x8b gzip bytes",
             default => 'body { color: red; }',
         }, $body);
@@ -336,6 +340,29 @@ final class StaticFilesTest extends TestCase
         $this->expectExceptionMessage('the brotli extension is not loaded');
 
         StaticFiles::create($this->root, 'br', $this->errorLog);
+    }
+
+    public function testZstdCompressionNeedsTheZstdExtension(): void
+    {
+        if (\function_exists('zstd_compress')) {
+            self::markTestSkipped('The zstd extension is loaded.');
+        }
+
+        $this->expectExceptionMessage('the zstd extension is not loaded');
+
+        StaticFiles::create($this->root, 'zstd', $this->errorLog);
+    }
+
+    #[RequiresPhpExtension('zstd')]
+    public function testCompressesWithZstd(): void
+    {
+        $css = str_repeat('body { color: red; }', 100);
+        $this->write('large.css', $css);
+
+        $response = $this->serve('/large.css', headers: ['Accept-Encoding' => 'gzip, zstd'], compression: 'zstd');
+
+        self::assertSame('zstd', $response['headers']['Content-Encoding'] ?? null);
+        self::assertSame($css, zstd_uncompress((string) base64_decode($response['body'], true)));
     }
 
     #[RequiresPhpExtension('brotli')]
