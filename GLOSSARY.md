@@ -53,3 +53,15 @@ _Avoid_: Local runtime, dev server
 **Static File**:
 A file present under the application's web root when an HTTP Invocation asks for it, answered as it is, without building the Application.
 _Avoid_: Asset (the Symfony component), public file
+
+**Function Runtime**:
+The PHP environment managed by Scaleway that a function declares, named like `php84`, with its PHP version and loaded extensions.
+_Avoid_: Runtime (the Symfony component and this package), target, platform
+
+**Function Runtime Catalogue**:
+The record, shipped with the package, of the PHP version and extensions measured on each supported Function Runtime, with the date of the measurement.
+_Avoid_: Runtime catalogue, inventory
+
+**Platform Requirement**:
+A `php` or `ext-*` constraint that the application or one of its production packages declares, as Composer defines it.
+_Avoid_: Dependency, system requirement
