@@ -26,7 +26,9 @@ use Symfony\Component\Runtime\SymfonyRuntime;
  * On top of the options managed by SymfonyRuntime, it accepts:
  *  - "front_controller": the Front Controller path, relative to "project_dir"; defaults to "public/index.php";
  *  - "host": the public host of the function, as no Host header reaches it; defaults to the SCALEWAY_HOST
- *    environment variable, then to "localhost".
+ *    environment variable, then to "localhost";
+ *  - "static_compression": false (the default), "gzip" or "br", the encoding Static Files of a textual type are
+ *    compressed with on the fly when they have no precompressed variant.
  *
  * Unlike SymfonyRuntime, it defaults the env to prod when the process environment sets none, whatever .env files say.
  *
@@ -52,7 +54,7 @@ class ScalewayRuntime extends SymfonyRuntime
     private ?Request $request = null;
 
     /**
-     * @param array<mixed> $options see SymfonyRuntime, plus "front_controller" and "host"
+     * @param array<mixed> $options see SymfonyRuntime, plus "front_controller", "host" and "static_compression"
      */
     public function __construct(array $options = [])
     {
@@ -81,6 +83,21 @@ class ScalewayRuntime extends SymfonyRuntime
             $_SERVER['APP_CACHE_DIR'] ??= sys_get_temp_dir().'/cache';
             $_SERVER['APP_LOG_DIR'] ??= sys_get_temp_dir().'/log';
         }
+    }
+
+    /**
+     * Serves the Static Files of the project's public/ directory, the web root of Symfony applications.
+     *
+     * @param resource $errorLog
+     */
+    public function createStaticFiles(mixed $errorLog): StaticFiles
+    {
+        $projectDir = $this->options['project_dir'] ?? null;
+        if (!\is_string($projectDir)) {
+            throw new \LogicException('The "project_dir" runtime option must be a string.');
+        }
+
+        return StaticFiles::create($projectDir.'/public', $this->options['static_compression'] ?? false, $errorLog);
     }
 
     /**

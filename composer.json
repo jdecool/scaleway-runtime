@@ -14,6 +14,7 @@
         "riverline/multipart-parser": "^2.3",
         "symfony/http-foundation": "^7.4 || ^8.0",
         "symfony/http-kernel": "^7.4 || ^8.0",
+        "symfony/mime": "^7.4 || ^8.0",
         "symfony/runtime": "^7.4 || ^8.0"
     },
     "suggest": {

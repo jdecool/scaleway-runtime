@@ -20,6 +20,7 @@ final class Handler
     private static ?self $instance = null;
 
     private ?ScalewayRuntime $runtime = null;
+    private ?StaticFiles $staticFiles = null;
     private ?InvocationRunner $runner = null;
 
     /**
@@ -57,6 +58,11 @@ final class Handler
     {
         try {
             $this->runtime ??= new ScalewayRuntime($this->runtimeOptions());
+            // Before the Application is built, so Static Files cost no boot and are served even when it cannot be built.
+            $this->staticFiles ??= $this->runtime->createStaticFiles($this->errorLog);
+            if (null !== $response = $this->staticFiles->serve($event)) {
+                return $response;
+            }
             $this->runner ??= $this->runtime->createInvocationRunner($this->errorLog);
 
             return $this->runner->invoke($event, $context);
