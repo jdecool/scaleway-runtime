@@ -1,0 +1,82 @@
+name: Function Runtime Catalogue
+
+# Scaleway updates its Function Runtimes without notice: measure them again every week, and propose the changes.
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  # The probe's namespace and function names are fixed: two runs would deploy over each other.
+  group: function-runtime-catalogue
+
+jobs:
+  measure:
+    name: Measure the Function Runtimes
+    runs-on: ubuntu-latest
+    env:
+      # A key limited to Serverless Functions, in a project dedicated to the probe.
+      SCW_ACCESS_KEY: ${{ secrets.SCW_ACCESS_KEY }}
+      SCW_SECRET_KEY: ${{ secrets.SCW_SECRET_KEY }}
+      SCW_DEFAULT_PROJECT_ID: ${{ secrets.SCW_DEFAULT_PROJECT_ID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+
+      - uses: ramsey/composer-install@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - name: Measure each Function Runtime with the probe
+        run: |
+          terraform -chdir=probe/terraform init -input=false
+          for runtime in php84 php85; do
+            terraform -chdir=probe/terraform apply -auto-approve -input=false -var "runtime=$runtime"
+            endpoint=$(terraform -chdir=probe/terraform output -raw endpoint)
+            fixture="tests/Fixtures/FunctionRuntimes/$runtime.json"
+            # A replaced function keeps answering with the previous Function Runtime for a while.
+            timeout 300 bash -c "until curl -sSf '$endpoint/?mode=runtime' -o '$fixture' && grep -q '\"phpVersion\": \"${runtime:3:1}\.${runtime:4:1}\.' '$fixture'; do sleep 5; done"
+          done
+
+      - name: Destroy the probe
+        if: always()
+        run: terraform -chdir=probe/terraform destroy -auto-approve -input=false
+
+      - name: Regenerate the catalogue
+        id: catalogue
+        run: |
+          changes=$(php probe/catalogue.php)
+          echo "$changes"
+          { echo 'changes<<EOF'; echo "$changes"; echo 'EOF'; } >> "$GITHUB_OUTPUT"
+
+      # Nothing but new measurement dates leaves the catalogue as it is.
+      - name: Open or update the pull request
+        if: steps.catalogue.outputs.changes != ''
+        uses: peter-evans/create-pull-request@v7
+        with:
+          # Pull requests opened with the default token do not trigger the CI that checks the catalogue.
+          token: ${{ secrets.CATALOGUE_PR_TOKEN || github.token }}
+          branch: catalogue-update
+          add-paths: |
+            resources/function-runtimes.php
+            tests/Fixtures/FunctionRuntimes
+          commit-message: 'feat: update the Function Runtime Catalogue to the latest measurement'
+          title: Update the Function Runtime Catalogue
+          body: |
+            The weekly measurement of the Function Runtimes found changes on Scaleway:
+
+            ```text
+            ${{ steps.catalogue.outputs.changes }}
+            ```
+
+            Merging does not release: users get the new catalogue with the next version of `jdecool/scaleway-runtime`.

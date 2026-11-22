@@ -17,6 +17,7 @@
     ],
     "require": {
         "php": ">=8.4",
+        "composer/semver": "^3.4",
         "riverline/multipart-parser": "^2.3",
         "symfony/http-foundation": "^7.4 || ^8.0",
         "symfony/http-kernel": "^7.4 || ^8.0",
@@ -53,6 +54,7 @@
         }
     },
     "bin": [
+        "bin/scaleway-doctor",
         "bin/scaleway-init",
         "bin/scaleway-package",
         "bin/scaleway-serve"

@@ -36,7 +36,10 @@ final readonly class Packager
     ) {
     }
 
-    public function package(string $zipFile): void
+    /**
+     * @param ?string $functionRuntime checks the Platform Requirements against it first, as "php84"
+     */
+    public function package(string $zipFile, ?string $functionRuntime = null): void
     {
         if (!class_exists(\ZipArchive::class)) {
             throw new \RuntimeException('The zip PHP extension is required to build the deployment zip.');
@@ -47,6 +50,9 @@ final readonly class Packager
             }
         }
         self::checkLock((string) file_get_contents($this->appDir.'/composer.json'), (string) file_get_contents($this->appDir.'/composer.lock'));
+        if (null !== $functionRuntime && !new Doctor(FunctionRuntimeCatalogue::load(), $this->log)->check($this->appDir, $functionRuntime)) {
+            throw new \RuntimeException(\sprintf('%s does not meet the Platform Requirements above: Scaleway\'s "composer install" would fail, and every Invocation answer a 500.', $functionRuntime));
+        }
 
         $this->log('Writing '.$zipFile);
         [$zipSize, $codeSize] = $this->zip($zipFile, $this->relativeToApp($zipFile));

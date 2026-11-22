@@ -8,13 +8,26 @@ use JDecool\ScalewayRuntime\Packager;
 
 require $_composer_autoload_path ?? __DIR__.'/../vendor/autoload.php';
 
-if (in_array($argv[1] ?? null, ['-h', '--help'], true)) {
-    echo 'Usage: scaleway-package [<zip-file>]  (default: function.zip)', \PHP_EOL;
-    exit(0);
+$usage = 'Usage: scaleway-package [--runtime=<function-runtime>] [<zip-file>]  (default: function.zip; --runtime checks the Platform Requirements against php84 or php85 first)';
+$functionRuntime = null;
+$zipFiles = [];
+foreach (array_slice($argv ?? [], 1) as $argument) {
+    if (in_array($argument, ['-h', '--help'], true)) {
+        echo $usage, \PHP_EOL;
+        exit(0);
+    }
+    if (1 === preg_match('/^--runtime=(.+)$/', $argument, $match)) {
+        $functionRuntime = $match[1];
+    } elseif (str_starts_with($argument, '-') || [] !== $zipFiles) {
+        fwrite(\STDERR, $usage.\PHP_EOL);
+        exit(1);
+    } else {
+        $zipFiles[] = $argument;
+    }
 }
 
 try {
-    (new Packager((string) realpath(InstalledVersions::getRootPackage()['install_path']), \STDERR))->package($argv[1] ?? 'function.zip');
+    (new Packager((string) realpath(InstalledVersions::getRootPackage()['install_path']), \STDERR))->package($zipFiles[0] ?? 'function.zip', $functionRuntime);
 } catch (Throwable $e) {
     fwrite(\STDERR, 'Packaging failed: '.$e->getMessage().\PHP_EOL);
     exit(1);
