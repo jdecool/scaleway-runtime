@@ -1,9 +1,14 @@
 {
     "name": "jdecool/scaleway-runtime",
     "description": "Symfony Runtime to run PHP applications on Scaleway Serverless Functions",
-    "type": "library",
     "license": "MIT",
-    "keywords": ["symfony", "runtime", "scaleway", "serverless"],
+    "type": "library",
+    "keywords": [
+        "symfony",
+        "runtime",
+        "scaleway",
+        "serverless"
+    ],
     "authors": [
         {
             "name": "Jeremy Decool"
@@ -17,13 +22,8 @@
         "symfony/mime": "^7.4 || ^8.0",
         "symfony/runtime": "^7.4 || ^8.0"
     },
-    "suggest": {
-        "ext-zip": "To build the deployment zip with vendor/bin/scaleway-package",
-        "nyholm/psr7": "To run Front Controllers returning a PSR-15 request handler",
-        "symfony/console": "To run Command Invocations and Front Controllers returning a Console Application or a Command",
-        "symfony/psr-http-message-bridge": "To run Front Controllers returning a PSR-15 request handler"
-    },
     "require-dev": {
+        "ergebnis/composer-normalize": "^2.58",
         "friendsofphp/php-cs-fixer": "^3.95",
         "nyholm/psr7": "^1.8",
         "phpstan/phpstan": "^2.3",
@@ -35,9 +35,20 @@
         "symfony/framework-bundle": "^7.4 || ^8.0",
         "symfony/psr-http-message-bridge": "^7.4 || ^8.0"
     },
+    "suggest": {
+        "ext-zip": "To build the deployment zip with vendor/bin/scaleway-package",
+        "nyholm/psr7": "To run Front Controllers returning a PSR-15 request handler",
+        "symfony/console": "To run Command Invocations and Front Controllers returning a Console Application or a Command",
+        "symfony/psr-http-message-bridge": "To run Front Controllers returning a PSR-15 request handler"
+    },
     "autoload": {
         "psr-4": {
             "JDecool\\ScalewayRuntime\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "JDecool\\ScalewayRuntime\\Tests\\": "tests/"
         }
     },
     "bin": [
@@ -45,26 +56,22 @@
         "bin/scaleway-package",
         "bin/scaleway-serve"
     ],
-    "autoload-dev": {
-        "psr-4": {
-            "JDecool\\ScalewayRuntime\\Tests\\": "tests/"
-        }
-    },
     "config": {
         "allow-plugins": {
+            "ergebnis/composer-normalize": true,
             "symfony/runtime": false
         },
         "sort-packages": true
     },
     "scripts": {
-        "test": "phpunit",
-        "phpstan": "phpstan analyse",
-        "cs": "php-cs-fixer fix --dry-run --diff",
-        "cs-fix": "php-cs-fixer fix",
         "check": [
             "@cs",
             "@phpstan",
             "@test"
-        ]
+        ],
+        "cs": "php-cs-fixer fix --dry-run --diff",
+        "cs-fix": "php-cs-fixer fix",
+        "phpstan": "phpstan analyse",
+        "test": "phpunit"
     }
 }
