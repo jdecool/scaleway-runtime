@@ -14,6 +14,15 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 | `GET /redirect` | A redirect to an absolute route URL |
 | `POST /` | Where CRON Invocations land, with the trigger's arguments as JSON body |
 
+The files of `public/` are [Static Files](../README.md#static-files), served by the runtime without building the Application:
+
+| File | What it shows |
+| --- | --- |
+| `/css/app.css` | A stylesheet, revalidated with its `ETag`; with `Accept-Encoding: gzip`, its precompressed `app.css.gz` |
+| `/js/greeting.js` | A JavaScript module, as `text/javascript` |
+| `/images/logo.png` | A binary file, base64-encoded in the Function Response |
+| `/assets/app-Ex4mPl3.css` | A digested file as AssetMapper writes one, listed in `assets/manifest.json`, so cached for good |
+
 Its `post-install-cmd` warms the prod cache when Scaleway installs the dependencies at deploy time, as the warmup needs no secret; without it, the first Invocation of each Warm Process builds the cache.
 
 It logs from the `info` level to stderr, which reaches Cockpit, through Symfony's fallback logger lowered in `config/services.yaml`, without Monolog.
