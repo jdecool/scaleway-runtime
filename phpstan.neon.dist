@@ -8,6 +8,7 @@ parameters:
         - src
         - tests
         - resources
+        - bin/scaleway-doctor
         - bin/scaleway-init
         - bin/scaleway-package
         - bin/scaleway-serve

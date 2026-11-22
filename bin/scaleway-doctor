@@ -1,0 +1,28 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Composer\InstalledVersions;
+use JDecool\ScalewayRuntime\Doctor;
+use JDecool\ScalewayRuntime\FunctionRuntimeCatalogue;
+
+require $_composer_autoload_path ?? __DIR__.'/../vendor/autoload.php';
+
+$usage = 'Usage: scaleway-doctor --runtime=<function-runtime>  (php84 or php85, as declared on the function)';
+$arguments = array_slice($argv ?? [], 1);
+if ([] !== array_intersect($arguments, ['-h', '--help'])) {
+    echo $usage, \PHP_EOL;
+    exit(0);
+}
+if (1 !== count($arguments) || 1 !== preg_match('/^--runtime=(.+)$/', $arguments[0], $match)) {
+    fwrite(\STDERR, $usage.\PHP_EOL);
+    exit(1);
+}
+
+try {
+    exit(new Doctor(FunctionRuntimeCatalogue::load(), \STDERR)->check((string) realpath(InstalledVersions::getRootPackage()['install_path']), $match[1]) ? 0 : 1);
+} catch (Throwable $e) {
+    fwrite(\STDERR, 'Check failed: '.$e->getMessage().\PHP_EOL);
+    exit(1);
+}
