@@ -45,6 +45,39 @@ Measured on 2026-11-14 on `php85` with a scratch function requiring `psr/log`, w
 - Nothing tells a failed deployment from a successful one: the status, `error_message`, `build_message` and `runtime_message` (empty) are the same, and Composer's output reaches neither Cockpit (no entry under the function's `resource_id`, nor anywhere in the project's logs) nor any `scw function` command.
 - The new instance logs `Function is not ready to serve requests yet...` and `Function is now ready to serve requests!` as usual, and the previous one `Forked function has terminated` about 40 seconds later.
 
+## Function Runtime Catalogue
+
+Measured on 2026-11-22 with the probe's `runtime` mode on `php84` and `php85`, region `fr-par`, the probe deployed with its Terraform for each, then destroyed.
+
+| Function Runtime | PHP | Loaded extensions | Without `phpversion()` |
+| --- | --- | --- | --- |
+| `php84` | 8.4.28 | 123 | none |
+| `php85` | 8.5.13 | 120 | none |
+
+- `php84` loads `geospatial`, `memcache`, `parle`, `php_trie` and `Stomp`, which `php85` does not; `php85` loads `lexbor` and `uri`, new in PHP 8.5.
+- Bundled extensions report the PHP version; `dom` reports `20031129`, and `mysqlnd` reports `mysqlnd 8.4.28`, which Composer cannot parse and sees as version `0`, as the catalogue records it.
+- Scaleway upgraded PHP on both Function Runtimes within eight days, without notice: `php84` from 8.4.27 to 8.4.28, `php85` from 8.5.12 to 8.5.13.
+
+The raw outputs are [tests/Fixtures/FunctionRuntimes](../tests/Fixtures/FunctionRuntimes), from which [probe/catalogue.php](../probe/catalogue.php) generates [resources/function-runtimes.php](../resources/function-runtimes.php), naming and versioning PHP and its extensions as Composer's `PlatformRepository` does.
+A test fails when the catalogue is not the one the fixtures generate.
+The list of Function Runtimes follows [Scaleway's runtime reference](https://www.scaleway.com/en/docs/serverless-functions/reference-content/functions-runtimes/), restricted to those the package's `php` requirement allows.
+
+### Updating the catalogue
+
+The [Function Runtime Catalogue workflow](../.github/workflows/function-runtimes.yml) runs every Monday, and by hand from the Actions tab before each release:
+
+1. it deploys the probe on each Function Runtime, saves its `?mode=runtime` output as the fixture, and destroys the probe whatever the outcome;
+2. it regenerates the catalogue, and does nothing more when only the measurement dates changed;
+3. otherwise it opens a pull request from the `catalogue-update` branch, or force-pushes the open one, listing the changes.
+
+It needs the repository secrets `SCW_ACCESS_KEY`, `SCW_SECRET_KEY` and `SCW_DEFAULT_PROJECT_ID`, for an API key limited to Serverless Functions in a project dedicated to the probe.
+Pull requests opened with the default token do not trigger the CI: set a `CATALOGUE_PR_TOKEN` secret, a fine-grained token with the contents and pull requests permissions, for the CI to check them.
+A failed deployment or query fails the job, without retry.
+Merging does not release: users get the new catalogue with the next version.
+
+By hand, deploy the probe as its [README](../probe/README.md) says, save `curl -sS "$PROBE_URL/?mode=runtime"` as `tests/Fixtures/FunctionRuntimes/<runtime>.json` for each Function Runtime, and run `php probe/catalogue.php`, which prints what changed.
+A new Function Runtime gets its own fixture; the script names it after the PHP version measured, and refuses two fixtures of the same one.
+
 ## HTTP Event
 
 Keys: `resource`, `path`, `httpMethod`, `headers`, `multiValueHeaders` (null), `queryStringParameters`, `multiValueQueryStringParameters` (null), `pathParameters` (null), `stageVariables`, `requestContext` (with `httpMethod`), `body`, `isBase64Encoded`.
