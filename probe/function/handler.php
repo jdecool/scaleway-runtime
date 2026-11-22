@@ -46,6 +46,37 @@ function handle($event, $context)
                 'isBase64Encoded' => true,
             ];
 
+        case 'size':
+            // The largest Function Response the platform accepts bounds the Static Files the runtime can serve.
+            // Capped so the public probe cannot exhaust its memory.
+            $bytes = min(max((int) ($query['bytes'] ?? 0), 0), 32 << 20);
+            if ('base64' === ($query['encoding'] ?? 'text')) {
+                return [
+                    'statusCode' => 200,
+                    'headers' => ['Content-Type' => 'application/octet-stream'],
+                    'body' => base64_encode(str_repeat("\xFF", $bytes)),
+                    'isBase64Encoded' => true,
+                ];
+            }
+
+            return ['statusCode' => 200, 'headers' => ['Content-Type' => 'text/plain'], 'body' => str_repeat('a', $bytes)];
+
+        case 'encoded':
+            // Does a Content-Encoding set by the function reach the client with the body untouched?
+            $text = str_repeat("Static File compressed by the function.\n", 1000);
+            $encoders = ['gzip' => 'gzencode', 'br' => 'brotli_compress', 'zstd' => 'zstd_compress'];
+            $encoding = isset($encoders[$query['encoding'] ?? '']) ? $query['encoding'] : 'gzip';
+            if (!function_exists($encoders[$encoding])) {
+                return ['statusCode' => 501, 'headers' => ['Content-Type' => 'text/plain'], 'body' => "No extension compresses with {$encoding}.\n"];
+            }
+
+            return [
+                'statusCode' => 200,
+                'headers' => ['Content-Type' => 'text/plain', 'Content-Encoding' => $encoding, 'Vary' => 'Accept-Encoding', 'X-Probe-Sha256' => hash('sha256', $text)],
+                'body' => base64_encode($encoders[$encoding]($text)),
+                'isBase64Encoded' => true,
+            ];
+
         case 'status':
             return ['statusCode' => (int) ($query['code'] ?? 418), 'headers' => ['Content-Type' => 'text/plain'], 'body' => "status\n"];
 

@@ -82,6 +82,25 @@ sleep 330; curl -sS "$PROBE_URL/?mode=history" > 09-history.ndjson
 curl -sS "$PROBE_URL/" -H 'X-Example-Cron-Header: forged' > 11-forged-cron-marker.json
 ```
 
+12. Static Files: the largest Function Response, and what the platform does with response encodings.
+
+```sh
+# Text and base64 bodies of 5 to 12 MiB (decoded size): which sizes reach the client whole?
+for size in 5 6 7 8 10 12; do
+  for encoding in text base64; do
+    curl -sS -o /dev/null -w "${size} MiB ${encoding}: HTTP %{http_code}, %{size_download} bytes\n" \
+      "$PROBE_URL/?mode=size&encoding=${encoding}&bytes=$((size * 1024 * 1024))"
+  done
+done > 12-response-sizes.txt
+# Does the platform compress responses itself? Look for Content-Encoding in the headers.
+curl -sS -o /dev/null -D 12-platform-compression.txt -H 'Accept-Encoding: gzip, br' "$PROBE_URL/?mode=size&bytes=102400"
+# Does a Content-Encoding set by the function reach the client, with a body that decodes to X-Probe-Sha256?
+for encoding in gzip zstd br; do
+  curl -sS -D 12-encoded-$encoding.headers -o 12-encoded-$encoding.body -H "Accept-Encoding: $encoding" "$PROBE_URL/?mode=encoded&encoding=$encoding"
+done
+php -r 'echo hash("sha256", gzdecode(file_get_contents("12-encoded-gzip.body"))), PHP_EOL;' > 12-encoded-gzip.sha256
+```
+
 ## Report back
 
 - All files of `probe-results/` (except `random.bin` and `body-*.txt`) and the exported logs.
@@ -104,6 +123,7 @@ The answers the files settle:
 | Read-only code dir, writable `/tmp`, free space | `01-facts.json` `filesystem` |
 | Shipped `vendor/` kept, Composer run at deploy (scripts, `--no-dev`) | `01-facts.json` `vendorMarkerKept`, `composerLockPresent`, `composerRun`, `vendorListing` |
 | stdout, uncaught exceptions | `07-*.txt`, logs |
+| Largest Function Response, platform compression, `Content-Encoding` pass-through, `brotli` extension | `12-*`, `01-facts.json` `extensions` |
 
 ## Clean up
 
