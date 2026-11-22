@@ -171,9 +171,63 @@ final class PackagerTest extends TestCase
         self::assertFileDoesNotExist($this->dir.'/function.zip');
     }
 
-    private function package(): void
+    public function testPlatformRequirementsAreCheckedAgainstTheFunctionRuntimeBeforeZipping(): void
     {
-        new Packager($this->appDir, $this->log)->package($this->dir.'/function.zip');
+        $this->requireInTheLock(['php' => '>=8.4']);
+
+        $this->package('php84');
+
+        self::assertFileExists($this->dir.'/function.zip');
+        self::assertStringContainsString('1 satisfied, 0 unknown, 0 incompatible on php84', $this->log());
+    }
+
+    public function testIncompatiblePlatformRequirementLeavesNoZip(): void
+    {
+        $this->requireInTheLock(['ext-not-on-scaleway' => '*']);
+
+        try {
+            $this->package('php84');
+            self::fail('The application must be refused.');
+        } catch (\RuntimeException $e) {
+            self::assertStringStartsWith('php84 does not meet the Platform Requirements above', $e->getMessage());
+        }
+        self::assertStringContainsString('INCOMPATIBLE  ext-not-on-scaleway *  required by acme/lib 1.0.0', $this->log());
+        self::assertFileDoesNotExist($this->dir.'/function.zip');
+    }
+
+    public function testPlatformRequirementsAreNotCheckedWithoutAFunctionRuntime(): void
+    {
+        $this->requireInTheLock(['ext-not-on-scaleway' => '*']);
+
+        $this->package();
+
+        self::assertFileExists($this->dir.'/function.zip');
+        self::assertStringNotContainsString('ext-not-on-scaleway', $this->log());
+    }
+
+    private function package(?string $functionRuntime = null): void
+    {
+        new Packager($this->appDir, $this->log)->package($this->dir.'/function.zip', $functionRuntime);
+    }
+
+    /**
+     * @param array<string, string> $require of the locked acme/lib, which leaves the lock in sync with composer.json
+     */
+    private function requireInTheLock(array $require): void
+    {
+        $lock = json_decode((string) file_get_contents($this->appDir.'/composer.lock'), true);
+        self::assertIsArray($lock);
+        self::assertIsArray($lock['packages']);
+        self::assertIsArray($lock['packages'][0]);
+        $lock['packages'][0]['require'] = $require;
+        $this->filesystem->dumpFile($this->appDir.'/composer.lock', (string) json_encode($lock));
+    }
+
+    private function log(): string
+    {
+        rewind($this->log);
+
+        return (string) stream_get_contents($this->log);
     }
 
     /**
