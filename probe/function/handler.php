@@ -112,6 +112,15 @@ function handle($event, $context)
         case 'exception':
             throw new RuntimeException('probe: exception escaping the handler');
 
+        case 'runtime':
+            // Only what the Function Runtime Catalogue is generated from, so that its output can be committed as it is.
+            return json_response([
+                'measuredAt' => gmdate('Y-m-d\\TH:i:s\\Z'),
+                'phpVersion' => PHP_VERSION,
+                // false when an extension reports no version: Platform Requirements on its version stay unknown.
+                'extensions' => array_combine($extensions = get_loaded_extensions(), array_map(static fn (string $name) => phpversion($name), $extensions)),
+            ]);
+
         case 'history':
             return ['statusCode' => 200, 'headers' => ['Content-Type' => 'application/x-ndjson'], 'body' => (string) @file_get_contents(PROBE_HISTORY)];
 

@@ -72,6 +72,12 @@ curl -sS -I "$PROBE_URL/" > 08-head.txt
 sleep 330; curl -sS "$PROBE_URL/?mode=history" > 09-history.ndjson
 ```
 
+To update the [Function Runtime Catalogue](../docs/probe-results.md#function-runtime-catalogue), save the PHP version and the extensions of each Function Runtime, dated, in the fixtures it is generated from:
+
+```sh
+curl -sS "$PROBE_URL/?mode=runtime" > ../tests/Fixtures/FunctionRuntimes/php85.json
+```
+
 10. Export the function's logs of the last hour, CRON lines included, from Cockpit's Grafana or with the Loki query of the [README](../README.md#logs).
 
 11. Compare a CRON Event (step 9 or 10) with the HTTP one of `01-facts.json`, `event` and `context` alike, and list what only the CRON one has or lacks: headers (a trigger name or id, a token, `User-Agent`, `X-Forwarded-For`), method, path, context fields.
