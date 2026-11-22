@@ -90,6 +90,23 @@ final class PackagerTest extends TestCase
         $zip->close();
     }
 
+    public function testWarnsAboutStaticFilesTooLargeForAFunctionResponse(): void
+    {
+        // Small enough as it is, but not once base64-encoded.
+        $this->filesystem->dumpFile($this->appDir.'/public/video.bin', str_repeat("\xff", 5 * 1024 * 1024));
+        $this->filesystem->dumpFile($this->appDir.'/public/app.css', 'body {}');
+        $this->filesystem->dumpFile($this->appDir.'/src/large.bin', str_repeat("\xff", 5 * 1024 * 1024));
+
+        $this->package();
+
+        rewind($this->log);
+        $log = (string) stream_get_contents($this->log);
+        self::assertStringContainsString('WARNING: public/video.bin takes 6.7 MiB in a Function Response, over the 6 MiB Scaleway accepts', $log);
+        self::assertStringNotContainsString('app.css', $log);
+        self::assertStringNotContainsString('src/large.bin', $log);
+        self::assertFileExists($this->dir.'/function.zip');
+    }
+
     public function testContentHashIsComposers(): void
     {
         $composer = json_decode((string) file_get_contents(__DIR__.'/Fixtures/PackagedApp/composer.json'), true);

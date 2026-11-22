@@ -149,6 +149,17 @@ An `array`: `{"memoryLimitInMb": 256, "functionName": "probe-php85", "functionVe
 - `HEAD` responses carry `Content-Length` and no body.
 - The platform adds `Access-Control-Allow-Origin: *` and `Access-Control-Allow-Headers: Content-Type` to every response.
 
+### Size and encodings
+
+Measured on 2026-11-22 on `php85` (256 MB) with the probe's `size` and `encoded` modes (step 12), sizes being the decoded body.
+
+- No size limit showed up: text bodies of up to 28 MiB and base64 ones of up to 12 MiB reached the client whole.
+- From 10 MiB on, responses failed intermittently with a `504` after exactly 60 seconds, text and base64 alike (10 MiB: 4 of 8 failed; 16 to 28 MiB base64: all failed); a successful 28 MiB text response took 44 seconds.
+- Up to 5 MiB, all 15 base64 responses of 1, 3 and 5 MiB succeeded; 6 to 8 MiB succeeded in a single run each.
+- The platform does not compress responses: a 100 KiB text body with `Accept-Encoding: gzip, br` came back without `Content-Encoding`.
+- A `Content-Encoding` set by the function, `gzip` or `zstd`, reaches the client with `Vary`, and the base64 body decoded by the platform is the compressed stream as sent.
+- The `php85` runtime loads 120 extensions: `zlib` and `zstd`, but not `brotli`.
+
 ## Logs
 
 Measured with the Loki HTTP API of the project's `Scaleway Logs` data source (`scw cockpit data-source list origin=scaleway types.0=logs`), with a `read_only_logs` Cockpit token sent as `Authorization: Bearer`; requests without it get `401`.

@@ -49,3 +49,7 @@ _Avoid_: Token, API key
 **Emulator**:
 The local server that turns real HTTP requests into Events and calls the Handler, to run an application without deploying it.
 _Avoid_: Local runtime, dev server
+
+**Static File**:
+A file present under the application's web root when an HTTP Invocation asks for it, answered as it is, without building the Application.
+_Avoid_: Asset (the Symfony component), public file

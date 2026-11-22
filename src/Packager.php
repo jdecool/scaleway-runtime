@@ -148,6 +148,9 @@ final readonly class Packager
             // Keeps the executable bits, as for bin/console.
             $zip->setExternalAttributesName($name, \ZipArchive::OPSYS_UNIX, ($file->getPerms() & 0o777 | 0o100000) << 16);
             $codeSize += $file->getSize();
+            if (str_starts_with($name, 'public/') && ($size = StaticFiles::responseSize($file->getPathname())) > StaticFiles::MAX_RESPONSE_SIZE) {
+                $this->log(\sprintf('WARNING: %s takes %.1f MiB in a Function Response, over the %.0f MiB Scaleway accepts: the function will answer it with a 500, serve it from Object Storage', $name, $size / 1024 ** 2, StaticFiles::MAX_RESPONSE_SIZE / 1024 ** 2));
+            }
         }
 
         if (!$zip->close()) {

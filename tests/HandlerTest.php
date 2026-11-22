@@ -99,6 +99,31 @@ final class HandlerTest extends TestCase
         self::assertSame(1, RecordingKernel::$builds);
     }
 
+    public function testStaticFilesAreServedWithoutBuildingTheApplication(): void
+    {
+        RecordingKernel::$failingBuilds = 1;
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php', 'debug' => false]);
+
+        $response = $handler->invoke(['path' => '/static.txt', 'httpMethod' => 'GET'], []);
+
+        self::assertSame(200, $response['statusCode']);
+        self::assertSame("Served without the Application.\n", $response['body']);
+        self::assertSame(0, RecordingKernel::$builds);
+        // Only another method reaches the Application, whose build fails once on purpose.
+        self::assertSame(500, $handler->invoke(['path' => '/static.txt', 'httpMethod' => 'POST'], [])['statusCode']);
+        self::assertSame(1, RecordingKernel::$builds);
+    }
+
+    public function testInvalidStaticCompressionFailsEveryInvocation(): void
+    {
+        $handler = $this->handler(['front_controller' => 'front-controllers/recording.php', 'debug' => false, 'static_compression' => 'deflate']);
+
+        self::assertSame(500, $handler->invoke(['path' => '/static.txt'], [])['statusCode']);
+        self::assertSame(500, $handler->invoke(['path' => '/'], [])['statusCode']);
+        self::assertStringContainsString('The "static_compression" runtime option must be false, "gzip", "br" or "zstd"', $this->errorLog());
+        self::assertSame(0, RecordingKernel::$builds);
+    }
+
     public function testUnsupportedApplicationTypeIsReported(): void
     {
         $this->handler(['front_controller' => 'front-controllers/unsupported.php', 'debug' => false])->invoke([], []);

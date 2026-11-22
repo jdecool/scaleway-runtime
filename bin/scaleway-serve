@@ -70,7 +70,7 @@ $startWarmProcess = static function () use ($handlerFile, $socket) {
 
 $warmProcess = $startWarmProcess();
 $server = start(
-    [\PHP_BINARY, '-d', 'enable_post_data_reading=0', '-d', 'expose_php=0', '-d', 'default_mimetype=', '-S', $address, __DIR__.'/../resources/emulator/router.php'],
+    [\PHP_BINARY, '-d', 'enable_post_data_reading=0', '-d', 'expose_php=0', '-d', 'default_mimetype=', '-d', 'default_charset=', '-S', $address, __DIR__.'/../resources/emulator/router.php'],
     ['SCALEWAY_EMULATOR_AUTOLOAD' => $autoload, 'SCALEWAY_EMULATOR_SOCKET' => $socket] + getenv(),
 );
 // Children outlive a killed parent, so a SIGTERM would leave the port busy and the Warm Process running.
