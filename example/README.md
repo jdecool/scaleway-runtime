@@ -14,7 +14,7 @@ A minimal Symfony application running on Scaleway Serverless Functions through `
 | `GET /redirect` | A redirect to an absolute route URL |
 | `POST /` | Where CRON Invocations land, with the trigger's arguments as JSON body |
 
-The files of `public/` are [Static Files](../README.md#static-files), served by the runtime without building the Application:
+The files of `public/` are [Static Files](../docs/static-files.md), served by the runtime without building the Application:
 
 | File | What it shows |
 | --- | --- |
@@ -97,7 +97,7 @@ terraform -chdir=terraform destroy
 Rerun `scaleway-package` and `terraform apply` (with the same `host`) to deploy a new version.
 `e2e/run.sh` checks that absolute URLs carry `SCALEWAY_HOST`, `localhost` when it is unset, as for a deployment without `host`.
 Against a deployment, `e2e/run.sh` skips the CRON scenarios, as only the platform triggers CRON Invocations.
-Check them in the [logs](../README.md#logs) instead, after the triggers ran (at minutes 0 and 30): each one leaves its line, the second showing that `app:greet` ran as a Command Invocation.
+Check them in the [logs](../docs/logs.md) instead, after the triggers ran (at minutes 0 and 30): each one leaves its line, the second showing that `app:greet` ran as a Command Invocation.
 
 ```
 DEBUG - [info] CRON Invocation received with the arguments ["job"] source=user stream=stderr
