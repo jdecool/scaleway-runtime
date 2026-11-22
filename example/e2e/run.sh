@@ -130,6 +130,38 @@ fi
 status=$(request missing "$base_url/missing")
 expect "unknown route" "$status" 404
 
+# Static Files, served by the runtime from public/ before the Application is built.
+status=$(request css "$base_url/css/app.css")
+expect "GET Static File status" "$status" 200
+expect "Static File content type" "$(header css content-type)" text/css
+expect "Static File body" "$(sha256 "$tmp/css.body")" "$(sha256 "$(dirname "$0")/../public/css/app.css")"
+expect "Static File nosniff" "$(header css x-content-type-options)" nosniff
+expect "Static File revalidated" "$(header css cache-control)" "public, max-age=0, must-revalidate"
+etag=$(header css etag)
+status=$(request css304 -H "If-None-Match: $etag" "$base_url/css/app.css")
+expect "Static File with a matching If-None-Match" "$status" 304
+status=$(request csshead -I "$base_url/css/app.css")
+expect "HEAD Static File" "$status $(header csshead content-type)" "200 text/css"
+
+status=$(request gzip -H 'Accept-Encoding: gzip' "$base_url/css/app.css")
+expect "precompressed variant encoding" "$(header gzip content-encoding)" gzip
+expect "precompressed variant varies" "$(header gzip vary)" Accept-Encoding
+expect "precompressed variant body" "$(php -r 'echo hash("sha256", (string) gzdecode(file_get_contents($argv[1])));' "$tmp/gzip.body")" "$(sha256 "$(dirname "$0")/../public/css/app.css")"
+
+status=$(request js "$base_url/js/greeting.js")
+expect "JavaScript module content type" "$status $(header js content-type)" "200 text/javascript"
+status=$(request png "$base_url/images/logo.png")
+expect "image content type" "$status $(header png content-type)" "200 image/png"
+expect "image body, base64 decoded by the platform" "$(sha256 "$tmp/png.body")" "$(sha256 "$(dirname "$0")/../public/images/logo.png")"
+status=$(request digested "$base_url/assets/app-Ex4mPl3.css")
+expect "digested Static File cached for good" "$(header digested cache-control)" "public, max-age=31536000, immutable"
+
+# Both reach the Application, which has no such route.
+status=$(request frontcontroller "$base_url/index.php")
+expect "the Front Controller is never served as a file" "$status" 404
+status=$(request dotenv --path-as-is "$base_url/../.env")
+expect "files outside public/ are not served" "$status" 404
+
 status=$(request postroot -X POST -H 'Content-Type: application/json' --data '{"job":"cleanup"}' "$base_url/")
 expect "POST / JSON body" "$(field postroot args.job)" cleanup
 

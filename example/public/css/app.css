@@ -1,0 +1,15 @@
+/* Served by the function as a Static File, without building the Application. */
+:root {
+    color-scheme: light dark;
+    font-family: system-ui, sans-serif;
+}
+
+body {
+    margin: 2rem auto;
+    max-width: 40rem;
+    line-height: 1.5;
+}
+
+code {
+    font-family: ui-monospace, monospace;
+}
